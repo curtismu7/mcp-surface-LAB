@@ -99,7 +99,7 @@ export default function App() {
   const people = users.filter((p) => p.role === "user"); const admins = users.filter((p) => p.role === "admin");
   // The calling user and the configuring administrator: the visitor's pick if it is still on the roster, else the first of each.
   const actor = users.some((p) => p.id === actorChoice) ? actorChoice : (people[0]?.id || "");
-  const admin = admins.some((p) => p.id === adminChoice) ? adminChoice : (admins[0]?.id || "");
+  const admin = users.some((p) => p.id === adminChoice) ? adminChoice : (admins[0]?.id || "");
   const banner = story && mode ? story.banner[mode] : BANNER_UNKNOWN;
   const ready = story && mode;
   const props = { story, mode, vertical, lab, actor, admin, scenarioId, setScenarioId };

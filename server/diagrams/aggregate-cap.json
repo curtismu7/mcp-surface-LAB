@@ -61,8 +61,8 @@
       "id": "up",
       "label": "{{castApp1}} MCP server",
       "group": "src",
-      "x": 1000,
-      "y": 600
+      "x": 1500,
+      "y": 0
     },
     {
       "id": "audit",
