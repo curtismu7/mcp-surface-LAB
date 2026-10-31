@@ -1,0 +1,180 @@
+{
+  "schema": "diagram-studio/1",
+  "id": "passthrough-assertion",
+  "title": "Token pass-through: a signed assertion, verified twice",
+  "lede": "A front-end application acting as an agent mints a short-lived signed assertion naming the end user, itself and the target backend. The gateway verifies it and forwards it unchanged; the backend verifies it again and scopes its answer to the end user. Ping release claim, UNVERIFIED on our tenant. Simulated.",
+  "groups": {
+    "people": {
+      "label": "People and agents",
+      "color": "blue"
+    },
+    "ping": {
+      "label": "Gateway",
+      "color": "red"
+    },
+    "src": {
+      "label": "Upstream and backend",
+      "color": "grey"
+    },
+    "rec": {
+      "label": "Policy and record",
+      "color": "dark"
+    }
+  },
+  "nodes": [
+    {
+      "id": "user",
+      "label": "End user ({{castUser}})",
+      "group": "people",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "fe",
+      "label": "Front-end application (acts as an agent)",
+      "group": "ping",
+      "x": 500,
+      "y": 0
+    },
+    {
+      "id": "gw",
+      "label": "Gateway",
+      "group": "ping",
+      "x": 1000,
+      "y": 0
+    },
+    {
+      "id": "be",
+      "label": "Backend ({{castApp2}})",
+      "group": "src",
+      "x": 1500,
+      "y": 0
+    },
+    {
+      "id": "keys",
+      "label": "Local RSA key (RS256)",
+      "group": "rec",
+      "x": 500,
+      "y": 300
+    },
+    {
+      "id": "trust",
+      "label": "Trusted issuers and keys",
+      "group": "rec",
+      "x": 1000,
+      "y": 300
+    }
+  ],
+  "edges": [
+    {
+      "source": "user",
+      "target": "fe",
+      "label": "a request"
+    },
+    {
+      "source": "fe",
+      "target": "keys",
+      "label": "sign the assertion"
+    },
+    {
+      "source": "keys",
+      "target": "fe",
+      "label": "RS256 signature"
+    },
+    {
+      "source": "fe",
+      "target": "gw",
+      "label": "assertion with user, app, target"
+    },
+    {
+      "source": "gw",
+      "target": "trust",
+      "label": "verify: signature, issuer, audience, expiry"
+    },
+    {
+      "source": "trust",
+      "target": "gw",
+      "label": "valid"
+    },
+    {
+      "source": "gw",
+      "target": "be",
+      "label": "the same bytes, unchanged"
+    },
+    {
+      "source": "be",
+      "target": "trust",
+      "label": "verify again, check replay"
+    },
+    {
+      "source": "be",
+      "target": "gw",
+      "label": "answer scoped to the user"
+    }
+  ],
+  "steps": [
+    {
+      "title": "A user asks the front-end",
+      "what": "The front-end application serves the user and needs to call a backend on their behalf.",
+      "edges": [
+        0
+      ]
+    },
+    {
+      "title": "It signs an assertion",
+      "what": "It mints a short-lived assertion: the end user, itself, the target backend, a lifetime and a unique id.",
+      "edges": [
+        1
+      ]
+    },
+    {
+      "title": "Signed with RS256",
+      "what": "The signature is real, from a throwaway RSA key generated locally.",
+      "edges": [
+        2
+      ]
+    },
+    {
+      "title": "It calls the gateway",
+      "what": "The assertion travels in the request. The agent-side code never learns any backend credential.",
+      "edges": [
+        3
+      ]
+    },
+    {
+      "title": "The gateway verifies",
+      "what": "Signature, issuer, audience and expiry. A wrong audience, an expired token, a tampered payload, an untrusted issuer or alg none are refused here.",
+      "edges": [
+        4
+      ]
+    },
+    {
+      "title": "Verified",
+      "what": "The assertion is accepted.",
+      "edges": [
+        5
+      ]
+    },
+    {
+      "title": "Forwarded unchanged",
+      "what": "The gateway forwards the exact bytes: the page shows a digest comparison, not a promise.",
+      "edges": [
+        6
+      ]
+    },
+    {
+      "title": "The backend verifies for itself",
+      "what": "It checks the signature and audience again and refuses a replayed id.",
+      "edges": [
+        7
+      ]
+    },
+    {
+      "title": "A scoped answer",
+      "what": "Because the assertion names the end user, the backend returns only what that user may see.",
+      "edges": [
+        8
+      ]
+    }
+  ]
+}

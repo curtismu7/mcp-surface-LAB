@@ -1,0 +1,211 @@
+{
+  "schema": "diagram-studio/1",
+  "id": "aggregate-cap",
+  "title": "The aggregate's policy is the cap, enforced twice",
+  "lede": "One endpoint fronts many MCP servers. A tool is visible through the aggregate only if the aggregate's own policy permits it, and that is enforced on the listing and call at the aggregate and again at the member hop. Ping release claim, UNVERIFIED on our tenant. Simulated.",
+  "groups": {
+    "people": {
+      "label": "People and agents",
+      "color": "blue"
+    },
+    "ping": {
+      "label": "Gateway",
+      "color": "red"
+    },
+    "src": {
+      "label": "Upstream and backend",
+      "color": "grey"
+    },
+    "rec": {
+      "label": "Policy and record",
+      "color": "dark"
+    }
+  },
+  "nodes": [
+    {
+      "id": "agent",
+      "label": "Agent ({{castUser}})",
+      "group": "people",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "agg",
+      "label": "Aggregate endpoint",
+      "group": "ping",
+      "x": 500,
+      "y": 0
+    },
+    {
+      "id": "aggpol",
+      "label": "Aggregate policy (the cap)",
+      "group": "rec",
+      "x": 500,
+      "y": 300
+    },
+    {
+      "id": "hop",
+      "label": "Member hop: {{castApp1}}",
+      "group": "ping",
+      "x": 1000,
+      "y": 0
+    },
+    {
+      "id": "mempol",
+      "label": "Member policy",
+      "group": "rec",
+      "x": 1000,
+      "y": 300
+    },
+    {
+      "id": "up",
+      "label": "{{castApp1}} MCP server",
+      "group": "src",
+      "x": 1000,
+      "y": 600
+    },
+    {
+      "id": "audit",
+      "label": "Audit and recording",
+      "group": "rec",
+      "x": 0,
+      "y": 300
+    }
+  ],
+  "edges": [
+    {
+      "source": "agent",
+      "target": "agg",
+      "label": "tools/call"
+    },
+    {
+      "source": "agg",
+      "target": "aggpol",
+      "label": "first check: in the cap?"
+    },
+    {
+      "source": "aggpol",
+      "target": "agg",
+      "label": "allowed or denied"
+    },
+    {
+      "source": "agg",
+      "target": "hop",
+      "label": "call plus cap header"
+    },
+    {
+      "source": "hop",
+      "target": "mempol",
+      "label": "second check: cap and member"
+    },
+    {
+      "source": "mempol",
+      "target": "hop",
+      "label": "allowed or denied"
+    },
+    {
+      "source": "hop",
+      "target": "up",
+      "label": "connect on first call"
+    },
+    {
+      "source": "up",
+      "target": "hop",
+      "label": "tool result"
+    },
+    {
+      "source": "hop",
+      "target": "agg",
+      "label": "result"
+    },
+    {
+      "source": "agg",
+      "target": "agent",
+      "label": "result, one endpoint"
+    },
+    {
+      "source": "agg",
+      "target": "audit",
+      "label": "who called what"
+    }
+  ],
+  "steps": [
+    {
+      "title": "The agent calls one endpoint",
+      "what": "The agent connects once and calls a namespaced tool, for example {{castApp1}}__read_record. It holds no backend credential.",
+      "edges": [
+        0
+      ]
+    },
+    {
+      "title": "First enforcement, at the aggregate",
+      "what": "The aggregate checks the prefixed name against its own policy (and the member's tool filter). A tool the member would allow but the aggregate does not is refused here, and hidden from the listing.",
+      "edges": [
+        1
+      ]
+    },
+    {
+      "title": "The decision",
+      "what": "Allowed, or refused as access denied. A tool that does not exist gets the same refusal.",
+      "edges": [
+        2
+      ]
+    },
+    {
+      "title": "To the member hop",
+      "what": "The aggregate resolves the member lazily from the tenant's applications, connects it on this first call, and sends the call with the aggregate's cap for this user.",
+      "edges": [
+        3
+      ]
+    },
+    {
+      "title": "Second enforcement, at the member hop",
+      "what": "The member hop applies the member's own policy and the aggregate's cap again. A tool the aggregate allows but the member denies is refused here.",
+      "edges": [
+        4
+      ]
+    },
+    {
+      "title": "The decision",
+      "what": "Allowed, or refused. Either layer alone is enough: the lab has two fault switches to show it.",
+      "edges": [
+        5
+      ]
+    },
+    {
+      "title": "Credential injection and call",
+      "what": "The member's auth mode injects the backend credential; the agent never sees it. The call reaches the server.",
+      "edges": [
+        6
+      ]
+    },
+    {
+      "title": "The tool result",
+      "what": "The server answers; the wire may be JSON, an event stream or gzip.",
+      "edges": [
+        7
+      ]
+    },
+    {
+      "title": "Back through the hop",
+      "what": "The result is returned to the aggregate.",
+      "edges": [
+        8
+      ]
+    },
+    {
+      "title": "One answer to the agent",
+      "what": "The aggregate answers in plain JSON. Its refusals are JSON-RPC errors with HTTP 200 (a measured note).",
+      "edges": [
+        9
+      ]
+    },
+    {
+      "title": "Recorded",
+      "what": "The call is written to the audit log with the acting user, and recorded with its arguments when session logging is on.",
+      "edges": [
+        10
+      ]
+    }
+  ]
+}

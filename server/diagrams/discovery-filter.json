@@ -1,0 +1,156 @@
+{
+  "schema": "diagram-studio/1",
+  "id": "discovery-filter",
+  "title": "Entitlement-aware discovery: removed in flight",
+  "lede": "Authorization is evaluated on the JSON-RPC method and its target. The upstream lists everything; the gateway removes what the caller is not entitled to from the response in flight, whether it is plain JSON, an event stream or gzip. Ping release claim, UNVERIFIED on our tenant. Simulated.",
+  "groups": {
+    "people": {
+      "label": "People and agents",
+      "color": "blue"
+    },
+    "ping": {
+      "label": "Gateway",
+      "color": "red"
+    },
+    "src": {
+      "label": "Upstream and backend",
+      "color": "grey"
+    },
+    "rec": {
+      "label": "Policy and record",
+      "color": "dark"
+    }
+  },
+  "nodes": [
+    {
+      "id": "agent",
+      "label": "Agent ({{castUser}})",
+      "group": "people",
+      "x": 0,
+      "y": 300
+    },
+    {
+      "id": "gw",
+      "label": "Gateway: method and target",
+      "group": "ping",
+      "x": 500,
+      "y": 300
+    },
+    {
+      "id": "pol",
+      "label": "Per-tool policy",
+      "group": "rec",
+      "x": 500,
+      "y": 0
+    },
+    {
+      "id": "up",
+      "label": "{{castApp1}} MCP server",
+      "group": "src",
+      "x": 1000,
+      "y": 300
+    },
+    {
+      "id": "filt",
+      "label": "In-flight filter",
+      "group": "ping",
+      "x": 500,
+      "y": 600
+    },
+    {
+      "id": "log",
+      "label": "Operator log",
+      "group": "rec",
+      "x": 1000,
+      "y": 600
+    }
+  ],
+  "edges": [
+    {
+      "source": "agent",
+      "target": "gw",
+      "label": "tools/list"
+    },
+    {
+      "source": "gw",
+      "target": "pol",
+      "label": "who may see what?"
+    },
+    {
+      "source": "pol",
+      "target": "gw",
+      "label": "3 of 5 tools"
+    },
+    {
+      "source": "gw",
+      "target": "up",
+      "label": "forward, credential injected"
+    },
+    {
+      "source": "up",
+      "target": "filt",
+      "label": "every tool, JSON, SSE or gzip"
+    },
+    {
+      "source": "filt",
+      "target": "agent",
+      "label": "only what you may see"
+    },
+    {
+      "source": "filt",
+      "target": "log",
+      "label": "removals, operator only"
+    }
+  ],
+  "steps": [
+    {
+      "title": "The agent asks for the tool list",
+      "what": "A tools/list request arrives. The method and its target are part of the decision, for tools, prompts and resources, listing and invocation.",
+      "edges": [
+        0
+      ]
+    },
+    {
+      "title": "Policy is consulted",
+      "what": "The gateway asks the per-tool policy what this user may see. No grant means no access, from the first initialize.",
+      "edges": [
+        1
+      ]
+    },
+    {
+      "title": "The entitlement",
+      "what": "For this user: three of the five tools.",
+      "edges": [
+        2
+      ]
+    },
+    {
+      "title": "Forwarded upstream",
+      "what": "The request goes on with the injected credential. The upstream knows nothing of entitlements.",
+      "edges": [
+        3
+      ]
+    },
+    {
+      "title": "The upstream answers with everything",
+      "what": "The answer may be a JSON body, an event stream split into chunks, or gzip. Streams are parsed frame by frame.",
+      "edges": [
+        4
+      ]
+    },
+    {
+      "title": "The agent receives only what it may see",
+      "what": "The hidden tools are gone. The agent cannot learn they exist, and calling one is refused exactly like calling one that does not exist.",
+      "edges": [
+        5
+      ]
+    },
+    {
+      "title": "What the operator sees",
+      "what": "Removals are logged for the operator. An unparseable frame or an unsupported encoding fails closed: the whole response is refused.",
+      "edges": [
+        6
+      ]
+    }
+  ]
+}
