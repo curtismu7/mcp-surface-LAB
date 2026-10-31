@@ -113,8 +113,12 @@ export class AuthServer {
     this.codes[code] = { clientId: cl.id, redirectUri, challenge: codeChallenge, scope: [...new Set(sc)], user, expiresAt: now + LIMITS.codeTtl, used: false, family: null };
     return { code, expires_in: LIMITS.codeTtl };
   }
+  // Room for `need` more tokens, checked BEFORE a code or a refresh token is consumed: a refusal here must leave every credential exactly as it was.
+  room(now, need) {
+    this.sweep(now);
+    if (Object.keys(this.access).length + Object.keys(this.refresh).length + need > LIMITS.tokens) throw refuse('too_many_tokens', 'too many live tokens, so reset to start over', 409);
+  }
   issue(cl, scope, user, family, now) {
-    if (Object.keys(this.access).length + Object.keys(this.refresh).length >= LIMITS.tokens) throw refuse('too_many_tokens', 'too many live tokens, so reset to start over', 409);
     const at = `mock-access-${String(++this.n.access).padStart(4, '0')}`; const out = { access_token: at, token_type: 'Bearer', expires_in: LIMITS.accessTtl, scope: scope.join(' ') };
     this.access[at] = { clientId: cl, user, scope, family, expiresAt: now + LIMITS.accessTtl };
     if (scope.includes('offline_access')) { const rt = `mock-refresh-${String(++this.n.refresh).padStart(4, '0')}`; this.refresh[rt] = { clientId: cl, user, scope, family, expiresAt: now + LIMITS.refreshTtl, used: false }; out.refresh_token = rt; }
@@ -131,6 +135,7 @@ export class AuthServer {
       if (rec.redirectUri !== p.redirectUri) throw refuse('invalid_grant', 'the redirect URI differs from the one the code was issued for');
       if (typeof p.codeVerifier !== 'string' || !VERIFIER.test(p.codeVerifier)) throw refuse('invalid_grant', 'the code_verifier is missing or not 43 to 128 characters of [A-Za-z0-9._~-]');
       if (!same(s256(p.codeVerifier), rec.challenge)) throw refuse('invalid_grant', 'PKCE verification failed: base64url(sha256(code_verifier)) does not equal the code_challenge');
+      this.room(now, rec.scope.includes('offline_access') ? 2 : 1);
       rec.used = true; rec.family = `fam-${++this.n.family}`;
       return this.issue(rec.clientId, rec.scope, rec.user, rec.family, now);
     }
@@ -142,12 +147,13 @@ export class AuthServer {
       if (rt.clientId !== p.clientId) throw refuse('invalid_grant', 'the refresh token belongs to a different client');
       let scope = rt.scope;
       if (p.scope !== undefined) { if (!Array.isArray(p.scope) || !p.scope.length || !p.scope.every((s) => rt.scope.includes(s))) throw refuse('invalid_scope', 'a refresh can narrow the scope, never widen it'); scope = [...new Set(p.scope)]; }
+      this.room(now, scope.includes('offline_access') ? 2 : 1);
       rt.used = true;
       return this.issue(rt.clientId, scope, rt.user, rt.family, now);
     }
     throw refuse('unsupported_grant_type', 'only authorization_code and refresh_token are supported');
   }
-  sweep(now) { for (const k of Object.keys(this.codes)) if (this.codes[k].expiresAt <= now) delete this.codes[k]; for (const k of Object.keys(this.access)) if (this.access[k].expiresAt <= now) delete this.access[k]; }
+  sweep(now) { for (const k of Object.keys(this.codes)) if (this.codes[k].expiresAt <= now) delete this.codes[k]; for (const k of Object.keys(this.access)) if (this.access[k].expiresAt <= now) delete this.access[k]; for (const k of Object.keys(this.refresh)) if (this.refresh[k].expiresAt <= now) delete this.refresh[k]; }
 
   // ---- discovery ----------------------------------------------------------------------------------------------------------------------------
   metadata(host) {

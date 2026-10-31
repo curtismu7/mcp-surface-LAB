@@ -21,6 +21,9 @@ export const isPure = (name) => isOp(name) && typeof OPS[name] === 'object' && O
 export function perform(engine, op, params) {
   if (!isOp(op)) throw new Error('unknown op');
   const fn = typeof OPS[op] === 'function' ? OPS[op] : OPS[op].run;
-  try { return { ok: true, result: fn(engine, params) }; }
+  try {
+    if (!isPure(op)) engine.assertRoom(); // a full audit log refuses the WHOLE request, before anything changes
+    return { ok: true, result: fn(engine, params) };
+  }
   catch (e) { if (e instanceof InputError) return { ok: false, status: e.status, code: e.code, detail: e.message, data: e.data }; throw e; }
 }

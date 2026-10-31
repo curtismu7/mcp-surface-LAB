@@ -56,9 +56,11 @@ export function verify(token, { trust, audience, now, maxLifetime = MAX_LIFETIME
   if (!aud.includes(audience)) return { ok: false, code: 'wrong_audience' };
   if (!Number.isFinite(claims.exp) || !Number.isFinite(claims.iat)) return { ok: false, code: 'missing_time_claims' };
   if (claims.exp <= now) return { ok: false, code: 'expired' };
+  if (claims.exp < claims.iat) return { ok: false, code: 'exp_before_iat' };
   if (claims.iat > now + 5) return { ok: false, code: 'issued_in_the_future' };
+  if (claims.nbf !== undefined && (!Number.isFinite(claims.nbf) || claims.nbf > now + 5)) return { ok: false, code: 'not_yet_valid' };
   if (claims.exp - claims.iat > maxLifetime) return { ok: false, code: 'lifetime_too_long' };
-  if (typeof claims.sub !== 'string' || typeof claims.jti !== 'string') return { ok: false, code: 'missing_claims' };
+  if (typeof claims.sub !== 'string' || !claims.sub || typeof claims.jti !== 'string' || !claims.jti) return { ok: false, code: 'missing_claims' };
   return { ok: true, header, claims };
 }
 

@@ -122,7 +122,7 @@ test('the mock REST backend: routes, path parameters percent-encoded (an id cann
   assert.equal(callBackend(by.listItems, { limit: 2 }, { headers: hdr, requiresAuth: true }).body.items.length, 2);
   assert.equal(callBackend(by.getItem, { id: 'i-2' }, { headers: hdr, requiresAuth: true }).body.name, 'Beta');
   const miss = callBackend(by.getItem, { id: '../../etc/passwd' }, { headers: hdr, requiresAuth: true });
-  assert.equal(miss.status, 404); assert.ok(miss.request.path.startsWith('/items/..%2F..%2Fetc%2Fpasswd'), miss.request.path); assert.ok(!JSON.stringify(miss.body).includes('passwd'));
+  assert.equal(miss.status, 404); assert.equal(miss.request.path, '/items/{id}', 'only the template is shown'); assert.ok(!JSON.stringify(miss).includes('passwd') && !JSON.stringify(miss).includes('%2F'));
   assert.equal(callBackend(by.getItem, { id: 'i-1' }, { headers: [], requiresAuth: true }).status, 401, 'the backend wants a header and the gateway injected none');
   assert.equal(callBackend(by.createItem, { body: { name: 'z' } }, { headers: hdr, requiresAuth: true }).status, 201);
   assert.equal(callBackend(by.delete_items_by_id, { id: 'i-9' }, { headers: hdr, requiresAuth: true }).status, 404);

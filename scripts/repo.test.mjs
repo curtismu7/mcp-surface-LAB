@@ -91,7 +91,7 @@ test('the settings key is MSF_LAB_MODE only, and the README says a bare MODE is 
 
 test('README sections follow the standard order (Troubleshooting, Ownership, Not done) and list the known detection limits and the input limits; conformance is said to be run by hand', () => {
   const r = read('README.md');
-  for (const limit of ['40,000 characters', '60 operations', '500 audit entries', '200 recorded calls', '8 hosted containers', '12 aggregate members', '30 proposals', '200 workspaces', '40 hops']) assert.ok(r.includes(limit), `the README states the limit: ${limit}`);
+  for (const limit of ['40,000 characters', '60 operations', '500 audit entries', '200 recorded calls', '8 hosted containers', '12 aggregate members', '30 proposals', '200 workspaces', '40 hops', '1,500 schema nodes', '12 list items']) assert.ok(r.includes(limit), `the README states the limit: ${limit}`);
   const at = (h) => r.indexOf(`\n## ${h}`);
   const order = ['What is simulated', 'Run from a clone', 'Settings file', 'Ports, and what to do', 'Mock and live modes', 'Health, doctor and reset', 'Docker', 'Tests', 'Troubleshooting', 'Ownership', 'Not done'].map(at);
   assert.ok(order.every((i) => i > 0), order.join());

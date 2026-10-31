@@ -70,7 +70,7 @@ Challenge: Servers found on the open internet are an unvetted supply-chain decis
 
 ## What is the deck and what is ours
 
-Every box on the page says where it comes from: deck claim, console swagger name (schema only), lab reading, lab-invented, or measured (AI-DEMO2 note). The measured notes are from October 2026 and are not about the 2026-11-02 release. The lab holds no credential for anything, and a typed secret never comes back: it is masked wherever it would appear.
+Every box on the page says where it comes from: deck claim, console swagger name (schema only), lab reading, lab-invented, or measured (AI-DEMO2 note). The measured notes are from October 2026 and are not about the 2026-11-02 release. The lab holds no credential for anything, and typed text that resembles a credential gets masked wherever it would appear (a heuristic: a short random secret with no recognisable shape can slip through).
 
 ## Where the deck and our own measured notes differ (shown, not resolved)
 

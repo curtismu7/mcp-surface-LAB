@@ -72,16 +72,17 @@ test('a refused call carries the JSON-RPC error, the enforcement point and the w
   });
 });
 
-test('every Live answer carries one trace: a W3C traceparent on every hop, continued from an incoming header, in the response header', async () => {
+test('every Live answer carries one trace: a W3C traceparent on every hop and in the response header; the lab always starts its own trace and never echoes a caller-sent id', async () => {
   await withServer(async (url) => {
     const tp = `00-${'a'.repeat(32)}-${'b'.repeat(16)}-01`;
     const r = await post(url, '/api/act/mcp', { mode: 'live', vertical: 'finance', params: { user: U, target: { kind: 'app', id: A1 }, rpc: { method: 'tools/list' } } }, { traceparent: tp });
     const b = await r.json();
-    assert.equal(b.traceId, 'a'.repeat(32)); assert.match(r.headers.get('traceparent'), /^00-a{32}-[0-9a-f]{16}-01$/);
-    assert.match(b.hops[0].request.headers.traceparent, /^00-a{32}-[0-9a-f]{16}-01$/); assert.ok(b.hops.length >= 4);
+    assert.match(b.traceId, /^[0-9a-f]{32}$/); assert.notEqual(b.traceId, 'a'.repeat(32), 'a caller-sent trace id is never continued');
+    assert.match(r.headers.get('traceparent'), /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/); assert.ok(!r.headers.get('traceparent').includes('a'.repeat(32)));
+    assert.match(b.hops[0].request.headers.traceparent, /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/); assert.ok(b.hops.length >= 4);
+    assert.ok(b.hops.every((h) => !JSON.stringify(h).includes('a'.repeat(32))));
     assert.deepEqual(b.hops.map((h) => h.n), b.hops.map((_, i) => i + 1));
-    const r2 = await post(url, '/api/act/mcp', { mode: 'live', vertical: 'finance', params: { user: U, target: { kind: 'app', id: A1 }, rpc: { method: 'tools/list' } } }, { traceparent: 'garbage' });
-    assert.match((await r2.json()).traceId, /^[0-9a-f]{32}$/);
+    for (const bad of ['garbage', `00-${'f'.repeat(32)}-${'1'.repeat(16)}-01`]) { const r2 = await post(url, '/api/act/mcp', { mode: 'live', vertical: 'finance', params: { user: U, target: { kind: 'app', id: A1 }, rpc: { method: 'tools/list' } } }, { traceparent: bad }); const b2 = await r2.json(); assert.match(b2.traceId, /^[0-9a-f]{32}$/); assert.ok(!JSON.stringify(b2).includes('f'.repeat(32))); }
   });
 });
 

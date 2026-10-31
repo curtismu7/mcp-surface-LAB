@@ -40,7 +40,7 @@ export const catalogOps = {
     const ns = this.nsOf(tenant); const id = `${ns}/${name}`;
     if (Object.hasOwn(this.deployments, id)) throw refuse('name_taken', 'a deployment with this name already exists in this tenant namespace', 409);
     const own = tenant === this.tenants[0];
-    if (own && Object.hasOwn(this.apps, name)) throw refuse('name_taken', 'an application with this name exists', 409);
+    if (own && this.nameInUse(name)) throw refuse('name_taken', 'an application with this name exists', 409);
     if (Object.keys(this.deployments).length >= MAX_DEPLOYMENTS) throw refuse('too_many_deployments', `the lab runs at most ${MAX_DEPLOYMENTS} containers: reset to start over`, 409);
     if (Object.keys(this.apps).length >= 30) throw refuse('too_many_apps', 'the lab holds at most 30 applications', 409);
     this.assertRoom();

@@ -1,5 +1,5 @@
 // These tests drive the real UI against the real Express app (started on a loopback port inside the test), so a green run means the pieces actually work together.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createApp, startHttpServer } from "../../server/src/app.js";
@@ -125,7 +125,7 @@ describe("Live flows", () => {
     await pick("cred-app", "payments"); await pick("cred-mode", "token-pass");
     await waitFor(() => expect(screen.getByTestId("mint")).toBeInTheDocument(), T);
     await click("mint"); await waitFor(() => expect(screen.getByTestId("pass-verdict")).toHaveTextContent(/accepted/), T);
-    expect(screen.getByTestId("unchanged")).toHaveTextContent(/same bytes/); expect(screen.getByTestId("mock-token").textContent.startsWith("eyJ")).toBe(true);
+    expect(screen.getByTestId("unchanged")).toHaveTextContent(/same string/); expect(screen.getByTestId("mock-token").textContent.startsWith("eyJ")).toBe(true);
     for (const d of ["wrong-audience", "expired", "tampered", "untrusted-issuer", "alg-none", "replay"]) {
       await pick("defect", d); await click("mint");
       await waitFor(() => expect(screen.getByTestId("pass-verdict")).toHaveTextContent(/^refused \(assertion_/), T);
@@ -177,6 +177,40 @@ describe("Live flows", () => {
     setValue("p-note", `please ${secret}`); await click("propose");
     await screen.findByTestId("proposal-prop-0001", {}, T);
     expect(document.body.textContent).not.toContain(secret.slice(4, 20)); expect(document.body.textContent).toMatch(/masked/);
+  });
+});
+
+describe("vertical switch", () => {
+  for (const modeName of ["mock", "live"]) {
+    it(`switching the vertical finance > health > retail on every tab in ${modeName} mode never throws and never blanks the page`, async () => {
+      const errors = []; const onErr = (e) => errors.push(String(e.error?.message || e.message)); window.addEventListener("error", onErr);
+      const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ").slice(0, 200)); });
+      try {
+        await mount(); if (modeName === "live") await live();
+        for (const t of TABS) {
+          await tab(t.label);
+          for (const v of ["health", "retail", "finance"]) {
+            await pick("vertical", v);
+            await waitFor(() => expect(screen.getByTestId("vertical").value).toBe(v), T);
+            await waitFor(() => expect(document.querySelector("[role=tabpanel]").textContent.length).toBeGreaterThan(50), T);
+            expect(screen.queryByTestId("tab-error")).toBeNull();
+          }
+        }
+        // after the last switch the page is still alive and the tab shows the right vertical's names
+        await tab("Aggregate"); await waitFor(() => expect(screen.getByTestId("members")).toBeInTheDocument(), T);
+        expect(errors.filter((m) => /Cannot read|undefined|TypeError|The above error/.test(m))).toEqual([]);
+      } finally { spy.mockRestore(); window.removeEventListener("error", onErr); }
+    });
+  }
+  it("a tab that throws is caught by the boundary and shown as text, and recovers when the tab changes", async () => {
+    const { TabBoundary } = await import("./App");
+    const Boom = () => { throw new Error("boom"); };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { rerender } = render(<TabBoundary resetKey="a"><Boom /></TabBoundary>);
+    expect(screen.getByTestId("tab-error")).toBeInTheDocument();
+    rerender(<TabBoundary resetKey="b"><p>fine</p></TabBoundary>);
+    await waitFor(() => expect(screen.getByText("fine")).toBeInTheDocument());
+    spy.mockRestore();
   });
 });
 

@@ -21,7 +21,7 @@ export const creationOps = {
     this.proposals = []; this.pn = 0;
     this.deploy = { pinned: false, sessions: [], sn: 0 };
   },
-  propNameFree(name) { return typeof name === 'string' && !Object.hasOwn(this.apps, name); },
+  propNameFree(name) { return typeof name === 'string' && !this.nameInUse(name); },
   checkProposalFields(f, { requireAll }) {
     const out = {};
     if (f.kind !== undefined || requireAll) { if (typeof f.kind !== 'string' || !KINDS.includes(f.kind)) throw refuse('bad_kind', 'kind is mcp or http'); out.kind = f.kind; }
@@ -30,7 +30,10 @@ export const creationOps = {
     if (f.authMode !== undefined || requireAll) { if (typeof f.authMode !== 'string' || !AUTH_MODES.includes(f.authMode)) throw refuse('bad_auth_mode', `authMode is one of ${AUTH_MODES.join(', ')}`); out.authMode = f.authMode; }
     return out;
   },
+  // Expiry is applied on READ: a proposal older than the TTL is expired in every view and for every action, not only when someone tries to decide it.
+  expireProposals() { for (const q of this.proposals) if (q.state === 'pending' && this.t - q.createdAt > PROPOSAL_TTL) q.state = 'expired'; },
   prop(id) {
+    this.expireProposals();
     const x = typeof id === 'string' ? this.proposals.find((q) => q.id === id) : null;
     if (!x) throw refuse('unknown_proposal', 'unknown proposal', 404);
     return x;
@@ -40,6 +43,7 @@ export const creationOps = {
     take(p, ['actor', 'kind', 'name', 'backend', 'authMode', 'note'], ['actor', 'kind', 'name', 'backend', 'authMode']);
     const who = this.user(p.actor);
     const f = this.checkProposalFields(p, { requireAll: true });
+    this.expireProposals();
     if (this.proposals.length >= MAX_PROPOSALS) throw refuse('too_many_proposals', `the lab holds at most ${MAX_PROPOSALS} proposals: reset to start over`, 409);
     if (this.proposals.some((q) => q.state === 'pending' && q.name === f.name)) throw refuse('duplicate_proposal', 'a pending proposal with this name exists', 409);
     this.assertRoom();
@@ -146,6 +150,7 @@ export const creationOps = {
   },
 
   creationView() {
+    this.expireProposals();
     return {
       proposals: this.proposals.map((q) => this.propView(q)), kinds: KINDS, authModes: AUTH_MODES, proposalTtlDays: PROPOSAL_TTL / 86400, limits: { proposals: MAX_PROPOSALS, sessions: MAX_SESSIONS },
       deployment: { host: `${this.cast.castHost}-gateway.example`, replicas: REPLICAS, pinned: this.deploy.pinned, sessions: this.deploy.sessions.map((s) => ({ ...s })), paths: [...Object.values(this.apps).map((a) => ({ path: a.entryPath, serves: a.id })), ...Object.values(this.aggregates).map((a) => ({ path: a.entryPath, serves: a.id }))] },

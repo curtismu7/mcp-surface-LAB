@@ -45,6 +45,14 @@ export function maskSpans(text, spans) {
   return out + text.slice(at);
 }
 
+// Percent-encoded text ("my%20password%20is%20...", "https%3A%2F%2Fu%3Apw%40host", double-encoded too) is decoded (bounded: three rounds) before matching, so
+// an encoded secret is masked, and what is returned is the DECODED and masked text, never the encoded original.
+const PCT = /%[0-9A-Fa-f]{2}/;
+export function decodePercent(text) {
+  let t = String(text);
+  for (let i = 0; i < 3 && PCT.test(t); i++) { try { const d = decodeURIComponent(t); if (d === t) break; t = d; } catch { break; } }
+  return t;
+}
 export function maskText(input) {
   const text = String(input);
   return text ? maskSpans(text, findCredentials(text)) : text;
@@ -52,9 +60,14 @@ export function maskText(input) {
 
 // Free text from the visitor: zero-width and bidi characters DELETED (so a token cannot be hidden by interleaving them), other control characters
 // turned into spaces, credential-shaped runs masked, and only THEN cut to length (a token that straddles the cut is masked, not half shown).
+// Every character that renders as nothing (default-ignorable: Hangul fillers, variation selectors, tag characters, combining grapheme joiner, Mongolian vowel
+// separator ...), every format character (zero-width, bidi, soft hyphen) and the replacement character: deleted, so none of them can split a secret.
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\uFFFD]/gu;
+export const stripInvisible = (text) => String(text).normalize('NFKC').replace(INVISIBLE, '');
 export function cleanFree(value, max = MAX_FREE) {
-  const flat = String(value ?? '').slice(0, MAX_SCAN).normalize('NFKC') // fullwidth look-alikes become the ASCII they imitate
-    .replace(/[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
+  const flat = stripInvisible(String(value ?? '').slice(0, MAX_SCAN)) // fullwidth look-alikes become the ASCII they imitate
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ');
-  return maskText(flat).replace(/\s+/g, ' ').trim().slice(0, max);
+  const decoded = PCT.test(flat) ? decodePercent(stripInvisible(flat)) : flat;
+  const text = decoded !== flat && findCredentials(decoded).length ? decoded : flat;
+  return maskText(text).replace(/\s+/g, ' ').trim().slice(0, max);
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState } from "react";
 import AggregateTab from "./components/AggregateTab";
 import DiscoveryTab from "./components/DiscoveryTab";
 import OpenapiTab from "./components/OpenapiTab";
@@ -32,6 +32,14 @@ const ACTION_TABS = ["aggregate", "discovery", "openapi", "credentials", "catalo
 
 const tabFromHash = () => { const h = window.location.hash.replace("#", ""); return TABS.some((t) => t.id === h) ? h : "aggregate"; };
 const savedMode = () => { try { const m = window.localStorage.getItem(MODE_KEY); return m === "live" || m === "mock" ? m : null; } catch { return null; } };
+
+// A tab that throws must not blank the whole page: the boundary shows the problem as text and a way back, and resets when the tab, the vertical or the mode changes.
+export class TabBoundary extends Component {
+  constructor(props) { super(props); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidUpdate(prev) { if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false }); }
+  render() { return this.state.failed ? <p className="app-error" role="alert" data-testid="tab-error">This tab could not be drawn. Switch tab, vertical or mode, or press Reset.</p> : this.props.children; }
+}
 
 export default function App() {
   const [vertical, setVertical] = useState("finance");
@@ -101,7 +109,9 @@ export default function App() {
   const actor = users.some((p) => p.id === actorChoice) ? actorChoice : (people[0]?.id || "");
   const admin = users.some((p) => p.id === adminChoice) ? adminChoice : (admins[0]?.id || "");
   const banner = story && mode ? story.banner[mode] : BANNER_UNKNOWN;
-  const ready = story && mode;
+  // The story (names) and the state (applications) must be for the SAME vertical before a tab is drawn: during a switch they briefly differ.
+  const ready = story && mode && story.vertical === vertical;
+  const stateReady = !!lab.state && lab.data?.vertical === vertical;
   const props = { story, mode, vertical, lab, actor, admin, scenarioId, setScenarioId };
   const Tab = { aggregate: AggregateTab, discovery: DiscoveryTab, openapi: OpenapiTab, credentials: CredentialsTab, catalog: CatalogTab, authorization: AuthorizationTab, creation: CreationTab }[tab];
   return (
@@ -162,7 +172,7 @@ export default function App() {
                   {story.talkTrack.filter((t) => (story.presenterTalk[tab] || []).includes(t.id)).map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
                 </aside>
               )}
-              {ACTION_TABS.includes(tab) && (!lab.state ? <p className="muted">Loading...</p> : <Tab {...props} />)}
+              {ACTION_TABS.includes(tab) && (!stateReady ? <p className="muted">Loading...</p> : <TabBoundary resetKey={`${tab}|${vertical}|${mode}`}><Tab {...props} /></TabBoundary>)}
               {tab === "diagram" && <DiagramTab vertical={vertical} resetSignal={resetSignal} />}
               {tab === "talk" && <TalkTrack talk={story.talkTrack} />}
               {mode === "live" && ACTION_TABS.includes(tab) && <LastAction last={lab.last} />}

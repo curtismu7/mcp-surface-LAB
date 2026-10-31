@@ -21,6 +21,7 @@ import { oauthOps } from './ops-oauth.js';
 import { creationOps } from './ops-creation.js';
 import { aggregateOps } from './ops-aggregate.js';
 
+const AUDIT_HEADROOM = 8;
 export const LIMITS = { audit: 500, recordings: 200, apps: 30, members: 12, hops: 40, clockMinutes: 1440, clockTotalDays: 90, grants: 8, listNames: 80 };
 export const METHODS = ['initialize', 'ping', 'tools/list', 'tools/call', 'prompts/list', 'prompts/get', 'resources/list', 'resources/read'];
 const LIST_METHODS = ['tools/list', 'prompts/list', 'resources/list'];
@@ -28,6 +29,22 @@ const DENY_MSG = 'access denied';
 // A JSON-RPC method the visitor typed is only ever stored or shown if it is one the gateway knows; anything else is '(unrecognised)'.
 const safeMethod = (m) => (METHODS.includes(m) ? m : '(unrecognised)');
 
+// What a recording can hold WITHOUT cutting anything: scrub() keeps at most 12 array items, 24 keys per object, 4 levels and 300 characters per string.
+// With session logging on, a call whose arguments exceed that is refused whole (413) rather than recorded in part.
+export const RECORDING_LIMITS = { items: 12, keys: 24, depth: 4, chars: 300 };
+export function fitsRecording(value) {
+  const work = [[value, 0]];
+  while (work.length) {
+    const [v, d] = work.pop();
+    if (typeof v === 'string') { if (v.length > RECORDING_LIMITS.chars) return false; continue; }
+    if (v === null || typeof v !== 'object') continue;
+    if (d > RECORDING_LIMITS.depth) return false;
+    const ks = Array.isArray(v) ? v : Object.keys(v);
+    if (ks.length > (Array.isArray(v) ? RECORDING_LIMITS.items : RECORDING_LIMITS.keys)) return false;
+    for (const k of Object.keys(v)) { if (!Array.isArray(v) && k.length > 40) return false; work.push([v[k], d + 1]); }
+  }
+  return true;
+}
 const rpcOk = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcErr = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 const text = (payload) => ({ content: [{ type: 'text', text: JSON.stringify(payload) }], isError: false });
@@ -43,7 +60,7 @@ export class Engine {
     this.aggregates = { 'all-in-one': seedAggregate(cast) };
     this.conn = Object.create(null); // `${aggregateId}/${appId}` -> connection counters
     this.faults = { hopIgnoresCap: false, aggregateSkipsCheck: false, ...(faults || {}) };
-    this.audit = []; this.recordings = []; this.sessionLogging = false;
+    this.audit = []; this.auditDropped = 0; this.recordings = []; this.sessionLogging = false;
     this.hops = []; this.hopsTruncated = false; this.trace = null;
     this.agents = AGENTS(cast).map((a) => ({ ...a }));
     this.tenants = [cast.castHost, cast.castTenant2];
@@ -59,9 +76,11 @@ export class Engine {
     if (this.hops.length >= LIMITS.hops) { this.hopsTruncated = true; return; }
     this.hops.push({ label, request: scrub(request), response: scrub(response) });
   }
-  assertRoom() { if (this.audit.length >= LIMITS.audit) throw refuse('log_full', `the audit log holds ${LIMITS.audit} entries and is full: reset to start over`, 507); }
+  // Called BEFORE an action changes anything (perform() does it for every non-pure action), with headroom for the few entries one action can write, so a full
+  // log refuses the whole request instead of mutating state and then answering 507.
+  assertRoom() { if (this.audit.length + AUDIT_HEADROOM > LIMITS.audit) throw refuse('log_full', `the audit log holds ${LIMITS.audit} entries and is full: reset to start over`, 507); }
   record(kind, fields = {}) {
-    this.assertRoom();
+    if (this.audit.length >= LIMITS.audit) throw refuse('log_full', `the audit log holds ${LIMITS.audit} entries and is full: reset to start over`, 507);
     this.audit.push({ n: ++this.n.audit, at: iso(this.t), kind, ...fields });
   }
   user(id) {
@@ -71,11 +90,13 @@ export class Engine {
   }
   admin(id) { const u = this.user(id); if (u.role !== 'admin') { this.deny('admin_only', { actor: u.id }); throw refuse('admin_only', 'only a tenant administrator may do this', 403); } return u; }
   // A refusal worth keeping: written to the audit log with the acting user.
-  deny(code, fields = {}) { if (this.audit.length < LIMITS.audit) this.audit.push({ n: ++this.n.audit, at: iso(this.t), kind: 'refused', code, ...fields }); }
+  deny(code, fields = {}) { if (this.audit.length < LIMITS.audit) this.audit.push({ n: ++this.n.audit, at: iso(this.t), kind: 'refused', code, ...fields }); else this.auditDropped++; }
   putApp(app, up = {}) {
     this.apps[app.id] = { ...app, tools: (up.tools || []).map((x) => ({ ...x })), prompts: (up.prompts || []).map((x) => ({ ...x })), resources: (up.resources || []).map((x) => ({ ...x })), policy: JSON.parse(JSON.stringify(app.policy)), generation: 1 };
     return this.apps[app.id];
   }
+  // One path must resolve to one application: a new name may not equal an application, an aggregate, or an aggregate's path.
+  nameInUse(name) { return Object.hasOwn(this.apps, name) || Object.values(this.aggregates).some((a) => a.id === name || a.name === name || a.entryPath === `/${name}/mcp`); }
   appOf(id) {
     if (typeof id !== 'string' || !Object.hasOwn(this.apps, id)) throw refuse('unknown_app', 'unknown application', 404);
     return this.apps[id];
@@ -261,10 +282,11 @@ export class Engine {
     const style = ctx.style && STYLES.includes(ctx.style) ? ctx.style : (member ? 'sse' : 'json');
     const wire = encodeAnswer(answer, style);
     const g = this.grantsOf(app.policy, user);
-    const keep = (kind, it) => (kind === 'tools' ? this.permits(g.tools, it.name) && (!ctx.cap || this.faults.hopIgnoresCap || ctx.cap.includes(it.name)) : kind === 'prompts' ? this.permits(g.prompts, it.name) : this.permits(g.resources, it.uri));
+    const keep = (kind, it) => (kind === 'tools' ? this.permits(g.tools, it.name) : kind === 'prompts' ? this.permits(g.prompts, it.name) : this.permits(g.resources, it.uri));
     const out = filterWire(wire, keep);
     this.hop(`upstream wire (${style}) then the in-flight filter`, { style, upstreamChunks: out.stats.upstreamChunks }, { frames: out.stats.frames.map((f) => ({ kind: f.kind, listing: f.listing, before: f.before, after: f.after })) });
     const message = out.messages.find((m) => m.id !== undefined) || out.messages[out.messages.length - 1];
+    if (!message) throw refuse('unparseable_frame', 'the upstream response carried no message the lab could read, so it was refused', 502);
     return { message, stats: out.stats, credential, identity, conn, where, style };
   }
 
@@ -293,6 +315,7 @@ export class Engine {
     this.assertRoom();
     this.n.call++;
     this.hop('agent to gateway: JSON-RPC over HTTP', { path: p.target.kind === 'aggregate' && typeof p.target.id === 'string' && Object.hasOwn(this.aggregates, p.target.id) ? this.aggregates[p.target.id].entryPath : p.target.kind === 'app' && typeof p.target.id === 'string' && Object.hasOwn(this.apps, p.target.id) ? this.apps[p.target.id].entryPath : '(unknown path)', method: safeMethod(rpc.method), as: who.label }, { note: 'the agent holds no backend credential' });
+    if (rpc.method === 'tools/call' && this.sessionLogging && !fitsRecording(rpc.params.arguments)) throw refuse('arguments_too_large_to_record', `session logging is on and these arguments exceed what a recording holds without cutting anything (${RECORDING_LIMITS.items} list items, ${RECORDING_LIMITS.keys} keys, ${RECORDING_LIMITS.depth} levels, ${RECORDING_LIMITS.chars} characters per text): the call is refused whole`, 413);
     if (rpc.method === 'tools/call' && this.sessionLogging && this.recordings.length >= LIMITS.recordings) throw refuse('recording_full', `session logging is on and the recording holds ${LIMITS.recordings} calls: the call is refused rather than left unrecorded. Reset to start over`, 507);
     const run = () => (p.target.kind === 'aggregate' ? this.callAggregate(this.aggOf(p.target.id), who.user, rpc, p) : this.directCall(this.appOf(p.target.id), who.user, rpc, p));
     let res;
@@ -441,7 +464,7 @@ export class Engine {
       credentials: this.credentialsView(), openapi: this.openapiView(), catalog: this.catalogView(), oauth: { ...this.auth.snapshot(this.now()), metadata: this.oauthMetadata() }, creation: this.creationView(),
       sessionLogging: this.sessionLogging, recordings: { total: this.recordings.length, shown: this.recordings.slice(-30) },
       agents: this.agents.map((a) => ({ ...a })), tenants: [...this.tenants],
-      audit: { total: this.audit.length, shown: this.audit.slice(-60) },
+      audit: { total: this.audit.length, shown: this.audit.slice(-60), dropped: this.auditDropped },
       limits: { ...LIMITS },
     };
   }

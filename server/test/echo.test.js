@@ -13,7 +13,13 @@ const NEEDLES = Object.entries(SECRETS).map(([k, v]) => ({ k, raw: v, probe: PRO
 const ZW = [...SECRETS.github].join('​');
 NEEDLES.push({ k: 'zeroWidthGithub', raw: ZW, probe: SECRETS.github.slice(4, 16) });
 NEEDLES.push({ k: 'filler', raw: `${'x '.repeat(9995)}${SECRETS.github}`, probe: SECRETS.github.slice(4, 16) }); // the secret sits after 19,990 characters
-const SHAPES = ['github', 'jwt', 'pem', 'bearer', 'plainIs', 'userinfo', 'hex', 'key31', 'zeroWidthGithub', 'filler'];
+// The same shapes typed percent-encoded and double-encoded (a masker that only sees "%20" would let them through).
+for (const k of ['plainIs', 'pwColon', 'userinfo', 'tokenWord', 'github', 'passEq']) {
+  const v = SECRETS[k]; const pr = PROBE(k, v);
+  NEEDLES.push({ k: `${k}Enc`, raw: encodeURIComponent(v), probe: pr, also: [encodeURIComponent(pr).slice(0, 14)] });
+  NEEDLES.push({ k: `${k}Enc2`, raw: encodeURIComponent(encodeURIComponent(v)), probe: pr, also: [encodeURIComponent(encodeURIComponent(pr)).slice(0, 14)] });
+}
+const SHAPES = ['github', 'jwt', 'pem', 'bearer', 'plainIs', 'userinfo', 'hex', 'key31', 'zeroWidthGithub', 'filler', 'plainIsEnc', 'plainIsEnc2', 'userinfoEnc', 'githubEnc', 'githubEnc2'];
 const strip = (t) => t.replace(/[​-‏⁠﻿­]/g, '');
 
 const spec = JSON.stringify(sampleSpec(C));
@@ -65,6 +71,7 @@ test('typing every credential shape into every string and every key of every act
             const r = await post(url, `/api/act/${op}`, { mode: 'live', vertical: 'finance', params: body }, W(ws));
             const t = strip(`${await r.text()} ${[...r.headers.values()].join(' ')}`);
             assert.ok(!t.includes(nd.probe), `${nd.k} via ${op}: the raw value is in the answer: ${t.slice(0, 120)}`);
+            for (const x of nd.also || []) assert.ok(!t.includes(x), `${nd.k} via ${op}: the encoded value is in the answer`);
             if (n % 7 === 0) { const st = strip(await (await get(url, '/api/state?mode=live', W(ws))).text()); assert.ok(!st.includes(nd.probe), `${nd.k} via ${op}: in the state`); }
           }
         }

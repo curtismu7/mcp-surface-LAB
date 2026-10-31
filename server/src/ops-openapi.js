@@ -25,7 +25,7 @@ export const openapiOps = {
     const a = this.admin(p.actor);
     const name = safeId(p.name, NAME_RE, 32);
     if (!name) throw refuse('bad_name', 'a name is lowercase letters, digits and hyphens, starting with a letter');
-    if (Object.hasOwn(this.apps, name)) throw refuse('name_taken', 'an application with this name exists', 409);
+    if (this.nameInUse(name)) throw refuse('name_taken', 'an application with this name exists', 409);
     if (Object.keys(this.oa.servers).length >= MAX_SERVERS) throw refuse('too_many_servers', `the lab hosts at most ${MAX_SERVERS} generated servers: reset to start over`, 409);
     if (Object.keys(this.apps).length >= MAX_APPS) throw refuse('too_many_apps', `the lab holds at most ${MAX_APPS} applications`, 409);
     this.assertRoom();

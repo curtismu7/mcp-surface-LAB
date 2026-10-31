@@ -145,7 +145,7 @@ export default function AggregateTab({ story, mode, lab, actor, admin, scenarioI
         <p><SourceTag source="deck" /> Slide 37: a member that is missing or unreachable is reported as such instead of silently dropping its tools.</p>
         <p><SourceTag source="measured" /> {visible(story.discrepancies.find((d) => d.id === "hang").text.replace(/^Deck \(slide 37\)[^.]*\. /, ""))}</p>
         <div className="row">
-          <button type="button" disabled={ro || lab.busy} onClick={() => lab.act("setTransport", { actor: admin, appId: story.cast.castApp5, transport: s.apps.find((a) => a.id === story.cast.castApp5).transport === "sse" ? "streamable-http" : "sse" })} data-testid="toggle-transport">Toggle the recorded transport of {visible(story.cast.castApp5)} (now {s.apps.find((a) => a.id === story.cast.castApp5).transport})</button>
+          <button type="button" disabled={ro || lab.busy} onClick={() => lab.act("setTransport", { actor: admin, appId: story.cast.castApp5, transport: s.apps.find((a) => a.id === story.cast.castApp5)?.transport === "sse" ? "streamable-http" : "sse" })} data-testid="toggle-transport">Toggle the recorded transport of {visible(story.cast.castApp5)} (now {s.apps.find((a) => a.id === story.cast.castApp5)?.transport ?? "unknown"})</button>
         </div>
       </section>
       <FieldSources fields={story.fieldSources.filter((f) => FIELD_RE.test(f.field))} />

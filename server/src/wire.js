@@ -77,21 +77,36 @@ export function filterWire(wire, keep) {
   const messages = [];
   const filterMessage = (msg, index, kind) => {
     if (!isObj(msg)) throw refuse('unparseable_frame', 'a frame in the upstream response is not a JSON-RPC message', 502);
-    const st = { index, kind };
+    const st = { index, kind, hidden: [] };
+    // Every listing, WHERE EVER it sits in the message (a result, a notification's params, error data, structured content, _meta ...), is filtered, iteratively.
+    const work = [[msg, true]];
+    while (work.length) {
+      const [node, top] = work.pop();
+      if (Array.isArray(node)) { for (const x of node) if (x !== null && typeof x === 'object') work.push([x, false]); continue; }
+      for (const k of Object.keys(node)) {
+        const v = node[k];
+        if (LISTINGS.includes(k) && (top ? false : true) && Array.isArray(v)) { st.nested = true; node[k] = filterList(k, v, st); continue; }
+        if (v !== null && typeof v === 'object') work.push([v, node === msg && k === 'result']);
+      }
+    }
     if (isObj(msg.result)) {
       for (const k of LISTINGS) {
         if (!Object.hasOwn(msg.result, k)) continue;
         const list = msg.result[k];
         if (!Array.isArray(list)) throw refuse('unparseable_frame', 'a listing in the upstream response is malformed', 502);
-        const kept = list.filter((it) => isObj(it) && typeof (k === 'resources' ? it.uri : it.name) === 'string' && keep(k, it));
-        st.listing = k; st.before = list.length; st.after = kept.length;
-        st.hidden = list.filter((it) => !kept.includes(it)).map((it) => (isObj(it) ? (it.name ?? it.uri) : '(malformed)')).filter((n) => typeof n === 'string');
-        msg.result[k] = kept;
+        st.listing = k; st.before = list.length;
+        msg.result[k] = filterList(k, list, st);
+        st.after = msg.result[k].length;
       }
     }
     stats.frames.push(st);
     messages.push(msg);
     return msg;
+  };
+  const filterList = (k, list, st) => {
+    const kept = list.filter((it) => isObj(it) && typeof (k === 'resources' ? it.uri : it.name) === 'string' && keep(k, it));
+    for (const it of list) if (!kept.includes(it)) { const n = isObj(it) ? (it.name ?? it.uri) : null; if (typeof n === 'string') st.hidden.push(n); }
+    return kept;
   };
   let outBody;
   if (type === 'application/json') {
@@ -99,8 +114,9 @@ export function filterWire(wire, keep) {
     if (Array.isArray(parsed)) parsed = parsed.map((m, i) => filterMessage(m, i, 'response')); else parsed = filterMessage(parsed, 0, 'response');
     outBody = Buffer.from(JSON.stringify(parsed));
   } else if (type === 'text/event-stream') {
+    // Decode the WHOLE body first (a multi-byte character split between two pieces would otherwise be mangled), then feed the text in small pieces: a frame split anywhere still parses.
     const p = new SseParser(); const text = body.toString('utf8'); const out = []; let idx = 0;
-    for (const part of splitChunks(Buffer.from(text), 31)) p.push(part.toString('utf8')); // fed in small pieces: a frame split anywhere still parses
+    for (let i = 0; i < text.length; i += 31) p.push(text.slice(i, i + 31));
     p.end();
     for (const f of p.take()) {
       if (f.comment) { stats.frames.push({ index: idx++, kind: 'comment' }); continue; }
@@ -112,6 +128,14 @@ export function filterWire(wire, keep) {
     }
     outBody = Buffer.from(out.join(''));
   } else throw refuse('unsupported_content_type', 'the upstream used a content type the lab does not filter, so the response was refused rather than passed through', 502);
+  // Fail closed: a response that yields no message at all (every frame dropped: a byte-order mark before "data:", "DATA:" in capitals ...) is refused, never passed on empty.
+  if (!messages.length) throw refuse('unparseable_frame', 'the upstream response carried no message the lab could read, so it was refused', 502);
+  // A name hidden from a listing must not survive ANYWHERE else in the response (a notification, error data, structured content, _meta ...): if one does, the whole response is refused.
+  const hidden = stats.frames.flatMap((f) => f.hidden || []).filter((n) => typeof n === 'string' && n.length >= 2);
+  if (hidden.length) {
+    const blob = JSON.stringify(messages);
+    for (const n of hidden) if (blob.includes(JSON.stringify(n).slice(1, -1))) throw refuse('hidden_name_in_frame', 'the upstream response carried a name the caller may not see outside a listing, so the whole response was refused', 502);
+  }
   const gz = enc === 'gzip';
   return { headers: { 'content-type': type, ...(gz ? { 'content-encoding': 'gzip' } : {}) }, chunks: splitChunks(gz ? zlib.gzipSync(outBody) : outBody), stats, messages };
 }

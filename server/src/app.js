@@ -29,9 +29,15 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
   app.disable('x-powered-by');
   app.use(hostCheck);
   app.use(sameOriginWrites);
-  app.use((_req, res, next) => { res.set('X-Content-Type-Options', 'nosniff'); next(); });
+  app.use((_req, res, next) => {
+    res.set('X-Content-Type-Options', 'nosniff'); res.set('X-Frame-Options', 'DENY');
+    res.set('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    next();
+  });
 
   const api = express.Router();
+  // Only UTF-8 bodies: a body declared utf-7 or another charset would be decoded into replacement characters that split a secret.
+  api.use((req, res, next) => { const m = /charset\s*=\s*"?([^;"\s]+)/i.exec(String(req.headers['content-type'] || '')); if (m && !/^utf-?8$/i.test(m[1])) return res.status(415).json({ error: 'unsupported_charset' }); return next(); });
   api.use(express.json({ limit: '64kb' }));
   // Defence in depth: every JSON answer is masked for credential-shaped values, whatever path produced it.
   api.use((_req, res, next) => { const send = res.json.bind(res); res.json = (b) => send(maskDeep(b)); next(); });
@@ -87,7 +93,7 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
 
   if (fs.existsSync(path.join(webDist, 'index.html'))) {
     app.use(express.static(webDist));
-    app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+    app.get(/^\/(?!api\/|assets\/).*/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
   }
   // The last two handlers catch everything that is left, for every method and every path: Express's default answers ("Cannot POST /<path>", or an HTML stack
   // trace with file paths) would echo the path the visitor typed, which may be a token. Fixed JSON, no path.

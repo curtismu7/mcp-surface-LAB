@@ -7,7 +7,7 @@ import { cleanFree } from './credentials.js';
 import { credentialShaped, isObj } from './util.js';
 import { MOCK_BACKEND_ITEMS } from './world.js';
 
-export const LIMITS = { chars: 40000, depth: 40, nodes: 20000, paths: 100, operations: 60, params: 25, refDepth: 12, schemaChars: 8000, argsChars: 8000, enumItems: 50 };
+export const LIMITS = { expandNodes: 1500, expandTotal: 20000, chars: 40000, depth: 40, nodes: 20000, paths: 100, operations: 60, params: 25, refDepth: 12, schemaChars: 8000, argsChars: 8000, enumItems: 50 };
 const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace'];
 const TYPES = new Set(['string', 'number', 'integer', 'boolean', 'object', 'array']);
 const HEADER_NAME = /^[A-Za-z][A-Za-z0-9-]{0,39}$/;
@@ -61,7 +61,10 @@ function pointer(root, ref) {
 }
 
 // Expands a schema into a self-contained JSON schema: $ref resolved (local only), cycles cut, unsupported keywords dropped.
+// The expansion budget counts nodes DURING expansion (a spec whose levels each $ref the next one is small as text and exponential once expanded).
+let budget = { tool: 0, total: 0 };
 function expand(root, node, stack, depth) {
+  if (--budget.tool < 0 || --budget.total < 0) throw refuse('schema_too_large', `the schemas expand to more than ${LIMITS.expandNodes} nodes for one tool (or ${LIMITS.expandTotal} in all): the lab refuses the whole document`, 413);
   if (depth > LIMITS.refDepth + 20) throw refuse('spec_too_deep', 'a schema nests too deeply');
   if (!isObj(node)) return {};
   if (Object.hasOwn(node, '$ref')) {
@@ -112,6 +115,7 @@ function toolName(op, method, path, used) {
 }
 
 export function generateTools(spec) {
+  budget = { tool: LIMITS.expandNodes, total: LIMITS.expandTotal };
   const paths = isObj(spec.paths) ? spec.paths : {};
   const pathKeys = Object.keys(paths);
   if (pathKeys.length > LIMITS.paths) throw refuse('too_many_paths', `the specification has more than ${LIMITS.paths} paths`, 413);
@@ -130,6 +134,7 @@ export function generateTools(spec) {
       const merged = new Map();
       for (const { p } of [...params(item.parameters), ...params(op.parameters)]) if (typeof p.name === 'string' && typeof p.in === 'string') merged.set(`${p.in}:${p.name}`, p);
       if (merged.size > LIMITS.params) throw refuse('too_many_parameters', `an operation has more than ${LIMITS.params} parameters`, 413);
+      budget.tool = LIMITS.expandNodes;
       const properties = {}; const required = []; const pathParams = []; const queryParams = []; const argNames = new Set(['body']);
       for (const p of merged.values()) {
         if (p.in === 'header' || p.in === 'cookie') { notExposed.push({ tool: name, in: p.in, why: p.in === 'header' ? 'headers are injected by the gateway, not chosen by the agent' : 'cookies are session state: the calling agent\'s responsibility' }); continue; }
@@ -202,7 +207,8 @@ export function callBackend(tool, args, { headers, requiresAuth }) {
   for (const p of tool.op.pathParams) path = path.split(`{${p.name}}`).join(encodeURIComponent(String(a[p.arg])));
   const query = {}; for (const p of tool.op.queryParams) if (a[p.arg] !== undefined) query[p.name] = String(a[p.arg]);
   const bodyKeys = tool.op.hasBody && isObj(a.body) ? Object.keys(a.body) : [];
-  const req = { method: tool.op.method, path, template: tool.op.path, queryNames: Object.keys(query), headerNames: headers.map((h) => h.name), bodyKeys };
+  // Only the TEMPLATE and the argument NAMES are ever shown: the substituted (percent-encoded) path would carry what the visitor typed in a form no masker recognises.
+  const req = { method: tool.op.method, path: tool.op.path, pathParamNames: tool.op.pathParams.map((p) => p.name), queryNames: Object.keys(query), headerNames: headers.map((h) => h.name), bodyKeys };
   if (requiresAuth && !headers.length) return { request: req, status: 401, body: { error: 'the backend needs an authentication header and the gateway injected none' } };
   const lim = Math.min(Number(query.limit) || 50, 50);
   const route = `${tool.op.method} ${tool.op.path}`;

@@ -87,7 +87,7 @@ export default function CredentialsTab({ story, mode, lab, actor, admin, scenari
                   <Json value={result.mockToken} label="mock-issued assertion" testId="mock-token" /><Json value={{ header: result.header, claims: result.claims, key: result.keyInfo }} label="decoded header and claims" testId="decoded" /></div>
                 <div><h4>What each side saw</h4>
                   <dl className="kv"><dt>The agent</dt><dd data-testid="agent-sees">{visible(result.agentSees.note)}</dd>
-                    <dt>Gateway forwarded</dt><dd data-testid="unchanged">{result.unchanged ? "the same bytes, unchanged (digests equal)" : "CHANGED"}</dd>
+                    <dt>Gateway forwarded</dt><dd data-testid="unchanged">{result.unchanged ? "the same string the front end minted (digests equal; the mock gateway hands on what it received)" : "CHANGED"}</dd>
                     <dt>Backend identified</dt><dd>{visible(result.backendIdentity.actor)} ({result.backendIdentity.kind})</dd>
                     <dt>Backend answer</dt><dd data-testid="scoped">{result.backendAnswer.recordsReturned} record(s), scoped to the end user: {String(result.backendAnswer.scopedToEndUser)}</dd></dl></div>
               </div>)}

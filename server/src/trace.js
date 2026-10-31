@@ -14,8 +14,9 @@ export function parseTraceparent(v) {
 }
 export const formatTraceparent = (traceId, spanId, flags = '01') => `00-${traceId}-${spanId}-${flags}`;
 
-export function newTrace(incoming, rand = randomBytes) {
-  const p = parseTraceparent(incoming);
+// The lab ALWAYS starts its own trace: a 32-hex trace id sent by the caller is indistinguishable from a 32-hex secret, so it is never echoed back
+// (in a response header, a hop pane or the traceId field). A valid incoming header is parsed (and tested) but not continued.
+export function newTrace(_incoming, rand = randomBytes) {
   const span = () => rand(8).toString('hex').replace(/^0{16}$/, '0000000000000001');
-  return { traceId: p ? p.traceId : rand(16).toString('hex').replace(/^0{32}$/, `${'0'.repeat(31)}1`), parentId: p ? p.parentId : null, span };
+  return { traceId: rand(16).toString('hex').replace(/^0{32}$/, `${'0'.repeat(31)}1`), parentId: null, span };
 }

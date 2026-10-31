@@ -22,7 +22,7 @@ export const credentialOps = {
     const c = this.cast;
     for (const u of [c.castUser, c.castAdmin]) this.vault[u] = { [c.castApp2]: true };
     this.upstreamAuth = Object.create(null); // `${user}/${app}` -> { accessExpiresAt, refreshExpiresAt, refreshes }
-    this.pass = { seen: new Set(), attempts: [], n: 0, last: Object.create(null) };
+    this.pass = { seen: new Set(), attempts: [], n: 0, total: 0, last: Object.create(null) };
   },
   issuerOf() { return `https://portal.${this.cast.castHost}.example`; },
   audienceOf(app) { return `https://${app.name}.${this.cast.castHost}.example/mcp`; },
@@ -107,7 +107,7 @@ export const credentialOps = {
   },
 
   presentAssertion(app, user, defect, rpc) {
-    const attempt = { n: this.pass.attempts.length ? this.pass.attempts[this.pass.attempts.length - 1].n + 1 : 1, user: user.id, app: app.id, defect, at: iso(this.t) };
+    const attempt = { n: ++this.pass.total, user: user.id, app: app.id, defect, at: iso(this.t) };
     const push = (a) => { this.pass.attempts.push(a); if (this.pass.attempts.length > ATTEMPTS_MAX) this.pass.attempts.shift(); };
     const key = `${user.id}/${app.id}`;
     let token = defect === 'replay' && this.pass.last[key] ? this.pass.last[key] : this.mintAssertion(app, user, defect === 'replay' ? 'none' : defect);
@@ -157,7 +157,7 @@ export const credentialOps = {
       modes: AUTH_MODES, defects: DEFECTS, maxAssertionLifetimeSec: MAX_LIFETIME_SEC, issuer: this.issuerOf(),
       vault: Object.fromEntries(Object.entries(this.vault).map(([u, m]) => [u, Object.keys(m)])),
       upstream: Object.entries(this.upstreamAuth).map(([k, v]) => ({ key: k, accessExpiresAt: iso(v.accessExpiresAt - BASE_EPOCH), refreshes: v.refreshes, state: v.accessExpiresAt > this.now() ? 'authorized' : 'access token expired (refreshes on next call)' })),
-      attempts: this.pass.attempts.slice(-20).map((a) => ({ n: a.n, user: a.user, app: a.app, defect: a.defect, stage: a.stage, verdict: a.verdict, code: a.code, unchanged: a.unchanged ?? null, claims: a.claims })), replayCache: this.pass.seen.size,
+      attemptsTotal: this.pass.total, attemptsKept: this.pass.attempts.length, attempts: this.pass.attempts.slice(-20).map((a) => ({ n: a.n, user: a.user, app: a.app, defect: a.defect, stage: a.stage, verdict: a.verdict, code: a.code, unchanged: a.unchanged ?? null, claims: a.claims })), replayCache: this.pass.seen.size,
     };
   },
 };

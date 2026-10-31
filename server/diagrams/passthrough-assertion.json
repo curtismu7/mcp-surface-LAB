@@ -157,7 +157,7 @@
     },
     {
       "title": "Forwarded unchanged",
-      "what": "The gateway forwards the exact bytes: the page shows a digest comparison, not a promise.",
+      "what": "The mock gateway hands on the same string; the page compares a digest of what the backend received with the one minted. That shows what the mock does: a gateway that rewrote the token would also fail the backend's signature check.",
       "edges": [
         6
       ]
