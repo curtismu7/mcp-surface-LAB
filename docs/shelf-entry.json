@@ -1,0 +1,16 @@
+{
+  "demos": [
+    {
+      "id": "mcp-surface-lab",
+      "name": "MCP Surface LAB",
+      "kind": "Demo",
+      "description": "The MCP gateway in front of every MCP server: an aggregate whose own policy caps its members (enforced twice), entitlement-aware discovery filtered in flight (JSON, streams, gzip), OpenAPI to MCP that runs for real locally, five backend credential modes including token pass-through with real RS256, a catalog of verified servers, OAuth 2.1 with PKCE and CIMD, and approval-gated creation: a simulation of the 2026-11-02 Ping release claims (slides 36 to 39). Mock tables, or a Live local engine. Every product claim is UNVERIFIED on our tenant.",
+      "url": "http://localhost:7350",
+      "healthPath": "/api/health",
+      "composeFile": "mcp-surface-LAB/docker-compose.yml",
+      "composeOverlays": [],
+      "notes": "Host-run: ./scripts/run.sh (port 7350). Docker: HOST_PORT=7350 docker compose up --build -d (published on 127.0.0.1 only). Mock and Live are both loopback-only with zero outbound calls; the lab holds no credential for anything.",
+      "catalogId": "D106"
+    }
+  ]
+}

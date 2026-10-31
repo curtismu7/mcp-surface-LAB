@@ -1,0 +1,411 @@
+{
+  "schema": "demo-content-pack/1",
+  "id": "mcp-surface-lab",
+  "title": "MCP Surface LAB",
+  "version": "0.1.0",
+  "demo": {
+    "id": "mcp-surface-lab",
+    "name": "MCP Surface LAB",
+    "catalog": "D106",
+    "baseUrl": "http://localhost:7350",
+    "doctor": "/api/health",
+    "tags": [
+      "mcp-gateway",
+      "aggregate",
+      "discovery",
+      "openapi",
+      "credential-injection",
+      "pass-through",
+      "catalog",
+      "oauth",
+      "cimd",
+      "simulated"
+    ]
+  },
+  "glossary": [
+    {
+      "id": "aggregate",
+      "term": "MCP Aggregate",
+      "definition": "One endpoint that fronts many MCP servers: every member's tools appear in one listing under namespaced names, each member prefixed with its alias (defaulting to the application's own name). Members are resolved from the tenant's applications and connected on demand; a missing or unreachable member is reported. The member shape names (Members, AppRef, Alias, ToolFilter) are console swagger names, schema only. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": [
+        "aggregate app"
+      ]
+    },
+    {
+      "id": "aggregate-cap",
+      "term": "The aggregate policy is the cap",
+      "definition": "A tool is visible through the aggregate only if the aggregate's own policy permits it, enforced on the listing and call at the aggregate and again at the member hop. The lab proves each point alone with two lab-invented fault switches. A measured AI-DEMO2 note says a listed member can hang; the deck does not. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": [
+        "cap",
+        "enforced twice"
+      ]
+    },
+    {
+      "id": "namespaced-tools",
+      "term": "Namespaced tools",
+      "definition": "alias__tool. The AI-DEMO2 note found a renamed alias strands the existing grant (measured). Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    },
+    {
+      "id": "lazy-members",
+      "term": "Lazy member connections",
+      "definition": "A member is connected when a tool is first called, not by a listing. The counters and states are lab-invented; how the gateway knows a member is down without connecting is a lab reading. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    },
+    {
+      "id": "per-tool-policy",
+      "term": "Per-tool policy",
+      "definition": "Authorization on the actual JSON-RPC method and target (tools, prompts, resources; listing and invocation). The grant shape is lab-invented. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    },
+    {
+      "id": "entitlement-discovery",
+      "term": "Entitlement-aware discovery",
+      "definition": "Tools a user is not entitled to are removed from listings in flight, including streamed and gzip responses, so the agent never learns they exist; a hidden tool also cannot be called. The frame parser and the fail-closed rules are the lab's own. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    },
+    {
+      "id": "openapi-to-mcp",
+      "term": "OpenAPI to MCP",
+      "definition": "Every operation of an OpenAPI document becomes an MCP tool with a per-operation schema; the generated server is fronted by the gateway as an ordinary application. Here the parser runs for real, locally, under lab-invented limits; the naming rule is lab-invented; the backend is an in-process mock. Authentication is header-based only. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": [
+        "spec-driven tools"
+      ]
+    },
+    {
+      "id": "credential-injection",
+      "term": "Backend credential injection",
+      "definition": "none, an app-wide static token, a per-user credential from the User Vault, a second OAuth flow, or token pass-through (AuthMode values are console swagger names). Every credential shown is a labelled MOCK. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    },
+    {
+      "id": "token-pass-through",
+      "term": "Token pass-through",
+      "definition": "A front-end application acting as an agent mints a short-lived signed assertion naming the end user, itself and the target backend; the gateway verifies it and forwards it unchanged. The lab signs with real RS256 and a local RSA key; the claims, lifetime cap and replay check are lab-invented. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": [
+        "assertion"
+      ]
+    },
+    {
+      "id": "mcp-catalog",
+      "term": "MCP Catalog",
+      "definition": "Verified servers deploy as managed containers in one step with policy, credential injection and audit from the first request, and are health-checked and redeployed on configuration change. The entries and the four states are lab-written; customer-published entries are on the roadmap. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    },
+    {
+      "id": "hosted-servers",
+      "term": "Hosted MCP servers",
+      "definition": "Managed containers, namespaced per tenant, with the calling user's vault credential in their environment. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    },
+    {
+      "id": "oauth-pkce",
+      "term": "OAuth 2.1 with mandatory PKCE",
+      "definition": "Dynamic registration, S256-only PKCE (verified for real), single-use codes, rotating refresh tokens and discovery metadata. Token lifetimes are lab-invented. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": [
+        "PKCE"
+      ]
+    },
+    {
+      "id": "cimd",
+      "term": "CIMD client registration",
+      "definition": "A client identifies itself by an allowlisted document URL; the gateway fetches, validates and caches it. The lab never fetches: fixed mock documents keyed by .example URLs. Console swagger names (schema only): CIMDConfig, CIMDClient, CIMDDocument. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": [
+        "client ID metadata document"
+      ]
+    },
+    {
+      "id": "approval-gated-creation",
+      "term": "Approval-gated creation",
+      "definition": "Non-administrators propose; an administrator reviews, can adjust and approves before anything is created. States, revision check and expiry are lab-invented; values are re-validated at approval. Ping release claim, UNVERIFIED on our tenant.",
+      "aliases": []
+    }
+  ],
+  "sources": [
+    {
+      "id": "deck-slides",
+      "title": "Ping ID4AI Workforce H2 2026 deck, slides 35 to 39",
+      "url": "https://example.invalid/ping-id4ai-workforce-h2-2026-deck",
+      "kind": "deck",
+      "use": "The MCP gateway, aggregate, OpenAPI to MCP and catalog release claims.",
+      "status": "read",
+      "checked": "2026-10-31"
+    },
+    {
+      "id": "console-swagger",
+      "title": "Privilege console swagger, 2026-10-31 (schema only)",
+      "url": "https://example.invalid/privilege-console-swagger",
+      "kind": "schema",
+      "use": "Field names for aggregate members, auth modes and CIMD configuration. It proves names exist, not behaviour.",
+      "status": "read",
+      "checked": "2026-10-31"
+    },
+    {
+      "id": "measured-notes",
+      "title": "AI-DEMO2 aggregate and discovery notes, October 2026",
+      "url": "https://example.invalid/ai-demo2-aggregate-notes",
+      "kind": "note",
+      "use": "Measured behaviour on an earlier gateway release: the member hang, refusal shapes, the cap header. Not about the 2026-11-02 release.",
+      "status": "read",
+      "checked": "2026-10-31"
+    }
+  ],
+  "cards": [
+    {
+      "id": "try-aggregate-cap",
+      "label": "Scenario 1: The aggregate's policy is the cap, enforced twice",
+      "description": "One endpoint fronts ledger, payments, cases, archive and legacy-core. A tool the member allows but the aggregate denies is hidden and refused at the aggregate; a tool the aggregate allows but the member denies is refused at the member hop. Each fault switch shows one layer alone is enough.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#aggregate"
+      },
+      "terms": [
+        "aggregate",
+        "aggregate-cap",
+        "namespaced-tools"
+      ],
+      "story": "S01"
+    },
+    {
+      "id": "try-members",
+      "label": "Scenario 2: Aliases, lazy connections and members that are missing, down or hang",
+      "description": "Members are resolved from the tenant's own applications and connected only when a tool is called. A missing or unreachable member is reported, not dropped; a member recorded as sse hangs (a measured note). An alias clash is refused, and renaming an alias strands the old grant.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#aggregate"
+      },
+      "terms": [
+        "lazy-members",
+        "namespaced-tools",
+        "aggregate"
+      ],
+      "story": "S02"
+    },
+    {
+      "id": "try-discovery",
+      "label": "Scenario 3: Entitlement-aware discovery: removed in flight, never callable",
+      "description": "The upstream lists everything. The gateway filters the listing in flight on a plain body, on a stream split into small chunks with comments and notifications, and on gzip. A tool you may not see cannot be called, and the refusal is the same as for one that does not exist.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#discovery"
+      },
+      "terms": [
+        "entitlement-discovery",
+        "per-tool-policy"
+      ],
+      "story": "S03"
+    },
+    {
+      "id": "try-openapi",
+      "label": "Scenario 4: OpenAPI to MCP: a spec becomes tools, and follows the spec",
+      "description": "This runs for real. The spec is parsed under hard limits, every operation becomes a tool, the generated server is fronted as an ordinary application, and a removed operation disappears on redeploy. Remote references and YAML are refused.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#openapi"
+      },
+      "terms": [
+        "openapi-to-mcp"
+      ],
+      "story": "S04"
+    },
+    {
+      "id": "try-credentials",
+      "label": "Scenario 5: Five ways to inject a backend credential",
+      "description": "The agent never holds the credential. A static token makes everyone the same service account; a vault credential, a second OAuth flow and a signed assertion let the backend see the person. The assertion is real RS256 and is verified twice.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#credentials"
+      },
+      "terms": [
+        "credential-injection",
+        "token-pass-through"
+      ],
+      "story": "S05"
+    },
+    {
+      "id": "try-catalog",
+      "label": "Scenario 6: The catalog: a verified server in one step, operated and redeployed",
+      "description": "A verified catalog entry deploys as a namespaced managed container with policy, credential injection and audit in place before the first request. Unknown and unverified entries are refused. A crash is found by a health check, and a configuration change redeploys.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#catalog"
+      },
+      "terms": [
+        "mcp-catalog"
+      ],
+      "story": "S06"
+    },
+    {
+      "id": "try-authorization",
+      "label": "Scenario 7: OAuth 2.1 with mandatory PKCE, refresh tokens and CIMD",
+      "description": "Dynamic registration, PKCE S256 verified for real, single-use codes and rotating refresh tokens; and CIMD, where the client is named by a document URL the tenant has allowlisted. The lab never fetches: each URL has one fixed mock outcome.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#authorization"
+      },
+      "terms": [
+        "oauth-pkce",
+        "cimd"
+      ],
+      "story": "S07"
+    },
+    {
+      "id": "try-creation",
+      "label": "Scenario 8: Approval-gated creation, session logging, headless agents and hosting",
+      "description": "Nothing is created until an administrator approves; nobody decides their own proposal; a denied proposal cannot be approved; a changed proposal is stale. Session logging records invocations; a headless agent acts as its owner; one hostname serves every application by path, and sessions must be pinned to a replica.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#creation"
+      },
+      "terms": [
+        "approval-gated-creation",
+        "hosted-servers"
+      ],
+      "story": "S08"
+    },
+    {
+      "id": "concept-why-gateway",
+      "label": "Why it matters: MCP Gateway (slide 36)",
+      "description": "Challenge: An MCP server typically authenticates with one shared token and exposes every tool to every caller: no attribution, no per-tool control. Security cannot approve that, so MCP adoption stalls in review. Technical: per-user identity, per-tool policy and injected credentials on every call, fully audited. Business: MCP integrations proceed under existing governance, cutting time to value on agent projects. (Ping claims, unverified on our tenant.)",
+      "group": "concept",
+      "action": {
+        "type": "route",
+        "href": "/#talk"
+      },
+      "terms": [
+        "per-tool-policy",
+        "entitlement-discovery",
+        "credential-injection"
+      ]
+    },
+    {
+      "id": "concept-why-aggregate",
+      "label": "Why it matters: MCP Aggregate (slide 37)",
+      "description": "Challenge: Every agent-server pair needs its own connection, configuration and credential, so integration effort and attack surface grow with each pair. Teams delay adding servers, and agents stay narrow. Technical: one connection, one policy cap enforced twice, one audit trail across every member server. Business: new servers join by configuration, not project work: lower per-integration cost and faster rollout of agent capability. (Ping claims, unverified on our tenant.)",
+      "group": "concept",
+      "action": {
+        "type": "route",
+        "href": "/#talk"
+      },
+      "terms": [
+        "aggregate",
+        "aggregate-cap"
+      ]
+    },
+    {
+      "id": "concept-why-openapi",
+      "label": "Why it matters: OpenAPI to MCP (slide 38)",
+      "description": "Challenge: Agents speak MCP but enterprise capability lives in REST APIs, so exposure demands a development project. Agent coverage waits on engineering, and adoption slows to engineering's backlog. Technical: spec-generated MCP servers under full gateway policy, with no code. Business: existing APIs reach agents without development spend, converting API assets to agent-ready in days rather than sprints. (Ping claims, unverified on our tenant.)",
+      "group": "concept",
+      "action": {
+        "type": "route",
+        "href": "/#talk"
+      },
+      "terms": [
+        "openapi-to-mcp"
+      ]
+    },
+    {
+      "id": "concept-why-catalog",
+      "label": "Why it matters: MCP Catalog (slide 39)",
+      "description": "Challenge: Servers found on the open internet are an unvetted supply-chain decision, and security review has nothing to base approval on. Adoption either stalls or happens unsanctioned around the review. Technical: verified, versioned images deploy behind the gateway in one step, controls applied from the first request. Business: removes blind supply-chain risk and shortens approval cycles: adopters choose between known-good options. (Ping claims, unverified on our tenant.)",
+      "group": "concept",
+      "action": {
+        "type": "route",
+        "href": "/#talk"
+      },
+      "terms": [
+        "mcp-catalog"
+      ]
+    },
+    {
+      "id": "concept-hang",
+      "label": "Deck claim versus our measured note: a member can hang",
+      "description": "Deck (slide 37): a member that is missing or unreachable is reported as such. Our measured note (AI-DEMO2, October 2026): a member recorded with the sse transport never answered through an aggregate, although it answered when called directly; the log showed the aggregate opening an event stream and waiting. Swapping the member for another application on the same server did not help; a small front that answers that GET with 405 did. The lab models both: the deck's reported-as-unreachable, and the measured hang (a call to a member recorded as sse times out in the lab's simulated 30 seconds). It cannot say whether 2026-11-02 changes the hang.",
+      "group": "concept",
+      "action": {
+        "type": "route",
+        "href": "/#aggregate"
+      },
+      "terms": [
+        "lazy-members",
+        "aggregate"
+      ]
+    },
+    {
+      "id": "concept-diagram",
+      "label": "Diagrams",
+      "description": "Three diagrams: the aggregate cap enforced twice; the discovery filter; and the pass-through assertion.",
+      "group": "concept",
+      "action": {
+        "type": "route",
+        "href": "/#diagram"
+      },
+      "terms": [
+        "aggregate-cap",
+        "entitlement-discovery",
+        "token-pass-through"
+      ]
+    },
+    {
+      "id": "ref-doctor",
+      "label": "Doctor and health",
+      "description": "Preflight checks and the demo-health/1 endpoint.",
+      "group": "setup",
+      "action": {
+        "type": "route",
+        "href": "/api/health"
+      }
+    }
+  ],
+  "stories": [
+    {
+      "id": "S01",
+      "title": "The aggregate's policy is the cap, enforced twice",
+      "say": "One endpoint fronts ledger, payments, cases, archive and legacy-core. A tool the member allows but the aggregate denies is hidden and refused at the aggregate; a tool the aggregate allows but the member denies is refused at the member hop. Each fault switch shows one layer alone is enough."
+    },
+    {
+      "id": "S02",
+      "title": "Aliases, lazy connections and members that are missing, down or hang",
+      "say": "Members are resolved from the tenant's own applications and connected only when a tool is called. A missing or unreachable member is reported, not dropped; a member recorded as sse hangs (a measured note). An alias clash is refused, and renaming an alias strands the old grant."
+    },
+    {
+      "id": "S03",
+      "title": "Entitlement-aware discovery: removed in flight, never callable",
+      "say": "The upstream lists everything. The gateway filters the listing in flight on a plain body, on a stream split into small chunks with comments and notifications, and on gzip. A tool you may not see cannot be called, and the refusal is the same as for one that does not exist."
+    },
+    {
+      "id": "S04",
+      "title": "OpenAPI to MCP: a spec becomes tools, and follows the spec",
+      "say": "This runs for real. The spec is parsed under hard limits, every operation becomes a tool, the generated server is fronted as an ordinary application, and a removed operation disappears on redeploy. Remote references and YAML are refused."
+    },
+    {
+      "id": "S05",
+      "title": "Five ways to inject a backend credential",
+      "say": "The agent never holds the credential. A static token makes everyone the same service account; a vault credential, a second OAuth flow and a signed assertion let the backend see the person. The assertion is real RS256 and is verified twice."
+    },
+    {
+      "id": "S06",
+      "title": "The catalog: a verified server in one step, operated and redeployed",
+      "say": "A verified catalog entry deploys as a namespaced managed container with policy, credential injection and audit in place before the first request. Unknown and unverified entries are refused. A crash is found by a health check, and a configuration change redeploys."
+    },
+    {
+      "id": "S07",
+      "title": "OAuth 2.1 with mandatory PKCE, refresh tokens and CIMD",
+      "say": "Dynamic registration, PKCE S256 verified for real, single-use codes and rotating refresh tokens; and CIMD, where the client is named by a document URL the tenant has allowlisted. The lab never fetches: each URL has one fixed mock outcome."
+    },
+    {
+      "id": "S08",
+      "title": "Approval-gated creation, session logging, headless agents and hosting",
+      "say": "Nothing is created until an administrator approves; nobody decides their own proposal; a denied proposal cannot be approved; a changed proposal is stale. Session logging records invocations; a headless agent acts as its owner; one hostname serves every application by path, and sessions must be pinned to a replica."
+    }
+  ]
+}

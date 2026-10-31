@@ -1,0 +1,12 @@
+# Safety
+
+- Loopback bind only (`MSFLAB_BIND` is the explicit opt-in the container uses); the compose file publishes `127.0.0.1` only (a test pins it). The container runs non-root, read-only, with every capability dropped.
+- Host header must be a loopback name; writes must be same-origin.
+- Netguard blocks every outbound connection (fetch, socket, DNS, UDP) with a self-test, and a test asserts zero attempts across the whole API in both modes. No worker thread, no child process. CIMD documents are fixed mocks keyed by `.example` URLs: nothing is ever fetched. The OpenAPI backend is an in-process function.
+- **The lab holds no credential for anything.** Every credential shown is a labelled MOCK with an 8-hex fingerprint. The one raw secret-looking value, the pass-through assertion, is a mock-issued JWT signed with a throwaway local RSA key that is never shown or written. A body with an unknown key is refused without naming the key.
+- **Typed text is masked (a heuristic).** Zero-width characters are deleted, text is NFKC-normalised, credential-shaped runs are masked, and only then is it cut to length; every JSON answer is masked again. Names, aliases, ids, URLs, redirect URIs, header names and method names the visitor types are validated against strict forms, never echoed in errors, and refused if they look like credentials. A JSON-RPC method that the gateway does not know is stored as "(unrecognised)". Every OpenAPI string that reaches a tool is cleaned.
+- **OpenAPI parser.** JSON only, 40,000 characters, nesting depth checked before JSON.parse, 20,000 nodes, 60 operations, 100 paths; local `#/` references only (remote, file and relative references are refused), cycles cut, `__proto__` keys refused, other prototype-looking names handled safely, no regular expression taken from a spec, no eval.
+- **Honest status codes.** A refusal keeps its 400, 401, 403, 404, 409, 502, 504, 507 or 503.
+- Writes are synchronous per engine, so a check and its change never interleave (tested over parallel HTTP). A request that would break a cap is refused whole. A new workspace past the cap is refused, never made by evicting another.
+- The server writes no file. The only home-directory touch is reading the optional shared settings file with `util.parseEnv`, taking only `MSF_LAB_MODE`.
+- Only `.example` and `.invalid` hosts appear in shipped text (a doctor check scans the story in every vertical and the Mock table).
