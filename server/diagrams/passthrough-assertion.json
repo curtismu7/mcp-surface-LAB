@@ -61,7 +61,7 @@
       "id": "trust",
       "label": "Trusted issuers and keys",
       "group": "rec",
-      "x": 1000,
+      "x": 1500,
       "y": 300
     }
   ],

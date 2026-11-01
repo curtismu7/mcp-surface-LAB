@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createApp, isPageAddress, startHttpServer } from '../src/app.js';
-import { createHealth } from '../src/health.js';
+import { rawDiagram } from '../src/diagramData.js';
+import { isPageAddress } from '../src/app.js';
 import { createWorkspaces } from '../src/workspaces.js';
 import { NAME_CHAR, containsWholeName, encodeAnswer, filterWire } from '../src/wire.js';
 import net from 'node:net';
@@ -126,4 +126,13 @@ test('N2: a pure preview in Live needs no workspace slot: it works in a new work
     assert.equal((await act(url, 'oaPreview', { spec: 'not json' }, 'brand-new')).status, 400, 'a refused preview is still refused honestly');
     assert.equal(workspaces.size(), 1);
   }, { workspaces });
+});
+
+// ---- S8 ----------------------------------------------------------------------------------------------------------------------------------------
+// The layout was measured in a real browser (scripts of the review: any label/label, label/node or node/node overlap over 1 px, at 1280 and 375 wide, light and dark). A browser
+// is not part of this suite, so the position that fixed it is pinned: "Trusted issuers and keys" sits under the backend, where the gateway's verify arrow, its reply and the
+// backend's own verify arrow each have their own side of the box (under the gateway the reply and the backend's arrow shared the box's right side and their labels met).
+test('S8: the pass-through diagram keeps the trust store under the backend (the label overlap fix)', () => {
+  const nodes = Object.fromEntries(rawDiagram('passthrough-assertion').nodes.map((n) => [n.id, n]));
+  assert.deepEqual([nodes.trust.x, nodes.trust.y], [nodes.be.x, 300]); assert.equal(nodes.be.x, 1500); assert.equal(nodes.gw.x, 1000);
 });
