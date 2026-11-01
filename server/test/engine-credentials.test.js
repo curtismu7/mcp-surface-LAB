@@ -187,3 +187,13 @@ test('a credential value is never shown: every credential in an answer is a labe
   const cred = r.operator.credential.headers[0].credential;
   assert.deepEqual(Object.keys(cred).sort(), ['fingerprint', 'kind', 'label']); assert.equal(cred.kind, 'mock'); assert.match(cred.label, /^MOCK /); assert.match(cred.fingerprint, /^[0-9a-f]{8}$/);
 });
+
+test('a 507 replay_cache_full refusal changes nothing: the attempt counter, the attempts kept and the audit log stay as they were (review fix)', () => {
+  const small = tokenPassEngine();
+  for (let i = 0; i < 200; i++) ok(pass(small, 'none'));
+  const view = () => JSON.stringify([small.snapshot().credentials.attemptsTotal, small.snapshot().credentials.attemptsKept, small.snapshot().credentials.replayCache, small.snapshot().audit]);
+  const before = view();
+  const r = pass(small, 'none'); assert.equal(r.code, 'replay_cache_full'); assert.equal(r.status, 507);
+  assert.equal(view(), before);
+  assert.equal(pass(small, 'replay').code, 'assertion_replay', 'a replay of the last accepted assertion is still refused by the backend, as before');
+});

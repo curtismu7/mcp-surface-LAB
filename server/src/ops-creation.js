@@ -71,6 +71,7 @@ export const creationOps = {
     take(p, ['actor', 'proposalId', 'decision', 'revision', 'adjust', 'reason'], ['actor', 'proposalId', 'decision', 'revision']);
     const a = this.admin(p.actor); const q = this.prop(p.proposalId);
     if (p.decision !== 'approve' && p.decision !== 'deny') throw refuse('bad_decision', 'decision is approve or deny');
+    if (p.decision === 'deny' && p.adjust !== undefined) throw refuse('adjust_on_deny', 'a denial carries no adjustment: adjust only goes with an approval', 400);
     if (q.proposer === a.id) { this.deny('self_approval', { actor: a.id, proposal: q.id }); throw refuse('self_approval', 'nobody decides their own proposal', 403); }
     if (q.state === 'denied') { this.deny('approve_after_deny', { actor: a.id, proposal: q.id }); throw refuse(p.decision === 'approve' ? 'approve_after_deny' : 'already_decided', p.decision === 'approve' ? 'a denied proposal cannot be approved: propose again' : 'the proposal was already decided', 409); }
     if (q.state !== 'pending') throw refuse(q.state === 'expired' ? 'proposal_stale' : 'already_decided', q.state === 'expired' ? 'the proposal expired' : 'the proposal was already decided', 409);

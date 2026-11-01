@@ -28,6 +28,15 @@ export function createWorkspaces({ max = 200, ttlMs = 60 * 60 * 1000, now = Date
       if (!v.engines.has(vertical)) v.engines.set(vertical, new Engine(cast));
       return v.engines.get(vertical);
     },
+    // Refuses (503) when this id would be a NEW workspace past the cap; touches nothing. Called before a request does any work.
+    assertRoom(id) { sweep(); if (!map.has(id) && map.size >= max) throw refuse('workspace_limit', `the lab holds at most ${max} workspaces and none has expired yet: try again later, or reset one`, 503); },
+    // Stores an engine a request built and CHANGED. A request that changed nothing visible never calls this, so a refused request holds no slot.
+    adopt(id, vertical, engine) {
+      this.assertRoom(id);
+      let v = map.get(id) || { engines: new Map(), at: 0 };
+      v.at = now(); map.delete(id); map.set(id, v);
+      if (!v.engines.has(vertical)) v.engines.set(vertical, engine);
+    },
     // Read-only look: the engine if the workspace has one, else null (nothing is created).
     peek(id, vertical) { sweep(); return map.get(id)?.engines.get(vertical) || null; },
     reset(id) { map.delete(id); },

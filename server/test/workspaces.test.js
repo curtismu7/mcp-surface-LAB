@@ -33,3 +33,24 @@ test('the store expires old workspaces; a new workspace past the cap is REFUSED 
   assert.equal(w.peek('d', 'finance'), null); assert.equal(w.size(), 0, 'everything expired');
   w.engine('e', 'finance', C); assert.equal(w.size(), 1);
 });
+
+test('a refused or pure request holds no workspace slot; a request that changes something does; the cap is still checked first (review fix)', async () => {
+  const { withServer, act, post, W, C: CC } = await import('./helpers.js');
+  await withServer(async (url) => {
+    // the cap is 3: three requests that are refused or change nothing, then three that do
+    assert.equal((await act(url, 'advance', { minutes: 0 }, 'j1')).status, 400);
+    assert.equal((await act(url, 'mcp', { user: 'nobody.at.all', target: { kind: 'app', id: CC.castApp1 }, rpc: { method: 'tools/list' } }, 'j2')).status, 400);
+    assert.equal((await act(url, 'oaPreview', { spec: 'x' }, 'j3')).status, 400);
+    assert.equal((await act(url, 'oaPreview', { spec: JSON.stringify({ openapi: '3.0.3', info: { title: 't', version: '1' }, paths: { '/a': { get: { operationId: 'a' } } } }) }, 'j4')).status, 200, 'a pure preview in Live');
+    for (const id of ['v1', 'v2', 'v3']) assert.equal((await act(url, 'advance', { minutes: 5 }, id)).status, 200, id);
+    const full = await act(url, 'advance', { minutes: 5 }, 'v4'); assert.equal(full.status, 503); assert.equal(full.body.error, 'workspace_limit');
+    assert.equal((await act(url, 'advance', { minutes: 0 }, 'v5')).status, 503, 'the cap is checked before the work');
+    assert.equal((await act(url, 'advance', { minutes: 5 }, 'v1')).status, 200, 'an existing workspace keeps working');
+    // a refusal that DOES leave a visible trace (the denial is audited) keeps its workspace, so the next read agrees with what the answer showed
+    assert.equal((await post(url, '/api/reset', {}, W('v3'))).status, 200);
+    const denied = await act(url, 'mcp', { user: CC.castUser, target: { kind: 'app', id: CC.castApp1 }, rpc: { method: 'tools/call', params: { name: 'no_such_tool', arguments: {} } } }, 'aud1');
+    assert.equal(denied.status >= 400, true);
+    const st = await (await fetch(`${url}/api/state?mode=live`, { headers: W('aud1') })).json();
+    assert.equal(JSON.stringify(st.state) === JSON.stringify(denied.body.state), true, 'what the refusal showed is what is stored');
+  }, { workspaces: createWorkspaces({ max: 3 }) });
+});

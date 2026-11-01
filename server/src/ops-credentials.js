@@ -107,6 +107,8 @@ export const credentialOps = {
   },
 
   presentAssertion(app, user, defect, rpc) {
+    // a full replay cache refuses the whole request BEFORE anything is minted or counted (the later check stays as a second line)
+    if (defect === 'none' && this.pass.seen.size >= SEEN_MAX) throw refuse('replay_cache_full', `the backend's replay cache holds ${SEEN_MAX} assertions: reset to start over`, 507);
     const attempt = { n: ++this.pass.total, user: user.id, app: app.id, defect, at: iso(this.t) };
     const push = (a) => { this.pass.attempts.push(a); if (this.pass.attempts.length > ATTEMPTS_MAX) this.pass.attempts.shift(); };
     const key = `${user.id}/${app.id}`;

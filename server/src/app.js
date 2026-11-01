@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { hostCheck, sameOriginWrites } from './safety.js';
 import { createHealth } from './health.js';
-import { loadCast, verticalFrom } from './cast.js';
+import { VERTICALS, loadCast, verticalFrom } from './cast.js';
 import { defaultMode, modeOf } from './config.js';
 import { buildStory } from './story.js';
 import { DIAGRAM_NAMES, buildDiagram } from './diagramData.js';
@@ -67,12 +67,14 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
     const id = ws(req, res); if (!id) return;
     noStore(res);
     try {
+      if (req.headers['content-type'] && !req.is('application/json')) return res.status(415).json({ error: 'unsupported_media_type', detail: 'send application/json' });
       const op = req.params.op;
       if (!isOp(op)) return res.status(404).json({ error: 'unknown_action' });
       if (!isObj(req.body)) return res.status(400).json({ error: 'bad_request' });
       const mode = modeOf(req.body.mode);
       if (!mode) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (!Object.keys(req.body).every((k) => ['mode', 'vertical', 'params'].includes(k))) return res.status(400).json({ error: 'unknown_field', detail: 'the body carries a field the lab does not take' });
+      if (req.body.vertical !== undefined && !(typeof req.body.vertical === 'string' && Object.hasOwn(VERTICALS, req.body.vertical))) return res.status(400).json({ error: 'bad_vertical', detail: 'the vertical is not one the lab has' });
       const vertical = verticalOf(req);
       const params = req.body.params === undefined ? {} : req.body.params;
       const route = { method: 'POST', url: '/api/act/(action)' };
@@ -88,6 +90,8 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
 
   // Reset clears this workspace's engines (apps, policies, aggregate, deployments, OAuth state, proposals, audit, the clock) and nothing else.
   api.post('/reset', (req, res) => { const id = ws(req, res); if (!id) return; noStore(res); workspaces.reset(id); return res.json({ reset: 'ok', workspace: id }); });
+  // A known route with the wrong method is a 405 with the allowed method (fixed JSON, nothing echoed); everything else is the JSON 404.
+  for (const [route, allow] of [['/state', 'GET'], ['/story', 'GET'], ['/diagram', 'GET'], ['/info', 'GET'], ['/act/:op', 'POST'], ['/reset', 'POST']]) api.all(route, (req, res) => (req.params.op !== undefined && !isOp(req.params.op) ? res.status(404).json({ error: 'not_found' }) : res.set('Allow', allow).status(405).json({ error: 'method_not_allowed' })));
   api.use((_req, res) => res.status(404).json({ error: 'not_found' }));
   app.use('/api', api);
 

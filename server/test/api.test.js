@@ -158,3 +158,23 @@ test('the diagram endpoint serves the three diagram-studio/1 diagrams by name, f
     assert.equal((await json(await get(url, '/api/diagram?name=__proto__'))).name, 'aggregate-cap');
   });
 });
+
+test('request-shape statuses: a known route with the wrong method is 405, a non-JSON body is 415, an unknown vertical is 400; none echoes the input (review fix)', async () => {
+  await withServer(async (url) => {
+    const secretLike = ['gh', 'p_', 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'].join('');
+    for (const [method, p, allow] of [['GET', '/api/act/mcp', 'POST'], ['GET', '/api/act/advance', 'POST'], ['PUT', '/api/state', 'GET'], ['POST', '/api/state', 'GET'], ['GET', '/api/reset', 'POST'], ['DELETE', '/api/story', 'GET']]) {
+      const r = await fetch(`${url}${p}`, { method, headers: { origin: url } });
+      assert.equal(r.status, 405, `${method} ${p}`); assert.equal(r.headers.get('allow'), allow); assert.deepEqual(await r.json(), { error: 'method_not_allowed' });
+    }
+    assert.equal((await get(url, '/api/nothing-here')).status, 404, 'an unknown route stays a 404');
+    assert.equal((await fetch(`${url}/api/act/${secretLike}`, { method: 'GET' })).status, 404, 'an unknown action is a 404 and the path is not echoed');
+    const text = await fetch(`${url}/api/act/advance`, { method: 'POST', headers: { 'content-type': 'text/plain', origin: url }, body: JSON.stringify({ mode: 'live', params: { minutes: 1 } }) });
+    assert.equal(text.status, 415); assert.equal((await text.json()).error, 'unsupported_media_type');
+    for (const vertical of ['nope', secretLike, 5, null, {}]) {
+      const r = await post(url, '/api/act/advance', { mode: 'live', vertical, params: { minutes: 1 } }, W('vert-check'));
+      const t = await r.text();
+      assert.equal(r.status, 400, String(vertical)); assert.equal(JSON.parse(t).error, 'bad_vertical'); assert.ok(!t.includes(secretLike));
+    }
+    for (const vertical of ['finance', 'health', 'retail', undefined]) assert.equal((await post(url, '/api/act/advance', { mode: 'live', vertical, params: { minutes: 1 } }, W('vert-ok'))).status, 200, String(vertical));
+  });
+});

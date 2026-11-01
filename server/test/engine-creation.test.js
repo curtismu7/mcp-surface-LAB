@@ -188,3 +188,13 @@ test('amend applies the same pending-name rule as propose: a name another pendin
   ok(run(e, 'decide', { actor: A2, proposalId: 'prop-0001', decision: 'deny', revision: 1 }));
   assert.equal(ok(run(e, 'amend', { actor: U2, proposalId: 'prop-0002', name: 'alpha' })).name, 'alpha', 'a denied proposal no longer holds its name');
 });
+
+test('a denial with an adjust field is refused (400) and the proposal stays pending; an approval may still adjust (review fix)', () => {
+  const e = newEngine(); ok(propose(e));
+  const r = decide(e, { decision: 'deny', adjust: { name: 'BAD NAME!!', kind: 5 } });
+  assert.equal(codeOf(r), 'adjust_on_deny'); assert.equal(r.status, 400);
+  assert.equal(prop(e).state, 'pending');
+  assert.equal(ok(decide(e, { decision: 'deny' })).state, 'denied', 'a plain denial works');
+  ok(propose(e, { name: 'other' }));
+  assert.equal(ok(decide(e, { proposalId: 'prop-0002', adjust: { name: 'adjusted' } })).createdApp, 'adjusted');
+});

@@ -18,12 +18,16 @@ export function liveState(ws, workspaces, vertical, cast) {
 
 // Runs one engine action for a workspace with a trace. Returns { outcome, hops, traceparent, state }.
 export function runAction({ ws, workspaces, vertical, cast, op, params, traceparent, route, engine }) {
-  const e = engine || workspaces.engine(ws, vertical, cast);
+  // A new workspace is only kept if the request CHANGED something the visitor can see: a refused request (bad parameters, an unknown user) and a pure preview
+  // leave no workspace behind, so they cannot use up the cap. The cap itself is checked first, before any work.
+  let e = engine; let fresh = null;
+  if (!e) { e = workspaces.peek(ws, vertical) && workspaces.engine(ws, vertical, cast); if (!e) { workspaces.assertRoom(ws); e = new Engine(cast); fresh = JSON.stringify(e.snapshot()); } }
   const t = newTrace(traceparent);
   const root = t.span();
   e.trace = { traceId: t.traceId, span: t.span }; e.hops = []; e.hopsTruncated = false;
   let outcome;
   try { outcome = perform(e, op, params); } finally { e.trace = null; }
+  if (fresh !== null && JSON.stringify(e.snapshot()) !== fresh) workspaces.adopt(ws, vertical, e);
   const first = { n: 1, label: 'browser to the lab API', request: { method: route.method, url: route.url, headers: { traceparent: formatTraceparent(t.traceId, root), 'x-workspace': ws }, body: scrub(params) }, response: { status: outcome.ok ? 200 : outcome.status, body: outcome.ok ? { ok: true } : { error: outcome.code } } };
   const hops = [first, ...e.hops.map((h, i) => ({ ...h, n: i + 2 }))];
   const truncated = e.hopsTruncated; e.hops = [];
