@@ -57,7 +57,7 @@ test('the CI workflow is GitHub-hosted, Node 26 only, and carries the forbidden-
   assert.ok(versions.length >= 3 && versions.every((v) => v === '26'), versions.join());
   assert.match(ci, /forbidden-strings:/);
   assert.match(ci, /gitleaks/);
-  assert.match(ci, /PORT=7259 npm run doctor/);
+  assert.match(ci, /PORT=7359 npm run doctor/);
 });
 
 test('package.json requires Node 26 and the Dockerfile uses a Node 26 base', () => {
@@ -116,4 +116,11 @@ test('app CSS follows the CSS standard: tokens only, no dark-mode media query, n
 
 test('the repo carries no k8s manifests, no bare MODE and no credential field in the web code', () => {
   for (const f of WEB_FILES) assert.ok(!/type="password"|process\.env\.MODE/.test(read(`web/src/${f}`)), f);
+});
+
+test('every PORT the CI workflow gives the doctor passes the doctor port-range check (review: it was 7259, outside 7350-7399)', async () => {
+  const ports = [...read('.github/workflows/ci.yml').matchAll(/PORT=(\d+)\s+npm run doctor/g)].map((m) => m[1]);
+  assert.ok(ports.length >= 1, 'ci.yml runs the doctor with a PORT');
+  const { runChecks } = await import('../server/src/doctor.js');
+  for (const p of ports) assert.equal((await runChecks({ env: { PORT: p } })).find((c) => c.id === 'port-range').level, 'pass', `ci.yml PORT=${p}`);
 });

@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: 26
       - run: npm ci
-      - run: PORT=7259 npm run doctor
+      - run: PORT=7359 npm run doctor
       - name: content pack validates
         run: node scripts/validate-content-pack.mjs
 
