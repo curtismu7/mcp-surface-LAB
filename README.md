@@ -104,7 +104,7 @@ npm test    # server (node --test), web (vitest, against the real server), scrip
 
 The shared checks are run by hand: `check-drift.sh`, `check-css.sh` (AI-DEMO-Standalone) and `conformance.mjs . --new` (demo-kit-base).
 
-On Node 26: 263 tests pass (218 server, 21 web, 24 scripts).
+On Node 26: 273 tests pass (227 server, 21 web, 25 scripts).
 
 ## Troubleshooting
 
