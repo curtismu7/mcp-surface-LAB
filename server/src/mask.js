@@ -2,18 +2,16 @@
 // forgot to clean its input. Iterative: a deep structure cannot overflow the stack. The generic long-blob detector is NOT applied here
 // (ids, hashes and trace ids are long and legitimate); the specific token, key, bearer and assignment detectors are. Visitor text is
 // already fully cleaned (long blobs included) on the way in by cleanFree.
-import { DETECTORS, decodePercent, maskSpans, stripInvisible } from './credentials.js';
+import { decodePercent, findCredentials, maskSpans, stripInvisible } from './credentials.js';
 
-const SPECIFIC = DETECTORS.filter((d) => !d.generic);
 // mockToken: the mock-issued, locally signed assertion of the pass-through lab (rule 4: mock tokens are shown raw, and labelled). It can carry no visitor text.
-const INVISIBLE_TEST = /[\p{Default_Ignorable_Code_Point}\p{Cf}\uFFFD]/u;
+const INVISIBLE_TEST = /[\p{Default_Ignorable_Code_Point}\p{Cf}\uFFFD\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u; // invisible, format and control characters (TAB, LF, CR stay)
 const OPAQUE = new Set(['hash', 'prevHash', 'traceparent', 'traceId', 'chainHead', 'mockToken']);
 
 export function maskResponseText(input) {
-  let text = INVISIBLE_TEST.test(input) ? stripInvisible(input) : input; // an answer never carries characters that could split a secret
-  if (/%[0-9A-Fa-f]{2}/.test(text)) { const d = decodePercent(text); if (d !== text && SPECIFIC.some((x) => { x.re.lastIndex = 0; return x.re.test(d); })) text = d; } // an encoded secret is shown decoded and masked
-  const spans = [];
-  for (const d of SPECIFIC) { d.re.lastIndex = 0; for (const m of text.matchAll(d.re)) spans.push({ start: m.index, end: m.index + m[0].length, id: d.id }); }
+  let text = INVISIBLE_TEST.test(input) ? stripInvisible(input) : input; // an answer never carries characters that could split a secret (a control character included)
+  if (/%[0-9A-Fa-f]{2}/.test(text)) { const d = stripInvisible(decodePercent(text)); if (d !== text && findCredentials(d, { generic: false, all: true }).length) text = d; } // an encoded secret is shown decoded and masked
+  const spans = findCredentials(text, { generic: false, all: true }); // the specific detectors only, separators tried both as spaces and deleted
   return spans.length ? maskSpans(text, spans) : text;
 }
 

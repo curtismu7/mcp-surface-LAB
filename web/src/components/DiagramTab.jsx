@@ -9,19 +9,20 @@ export default function DiagramTab({ vertical, resetSignal }) {
   const [pattern, setPattern] = useState(null);
   const [error, setError] = useState(null);
   const [name, setName] = useState("aggregate-cap");
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true; // a late answer for a diagram or vertical the visitor has already left is dropped
-    setPattern(null);
+    setPattern(null); setError(null); // a new request clears the last failure
     getJson(`/api/diagram?vertical=${encodeURIComponent(vertical)}&name=${name}`).then((j) => { if (live) setPattern(j); }, (e) => { if (live) setError(e.message); });
     return () => { live = false; };
-  }, [vertical, name]);
-  if (error) return <p className="field-error" role="alert">Could not load the diagram ({error}).</p>;
+  }, [vertical, name, attempt]);
+  // The buttons stay on screen when a request fails, so another diagram can be chosen, and the failure has a retry.
   return (
     <>
       <div className="seg" role="group" aria-label="Diagram">
         {NAMES.map(([id, label]) => <button key={id} type="button" aria-pressed={name === id} onClick={() => setName(id)} data-testid={`dg-${id}`}>{label}</button>)}
       </div>
-      {pattern ? <PatternDiagram key={name} pattern={pattern} resetSignal={resetSignal} /> : <p className="muted">Loading...</p>}
+      {error ? <p className="field-error" role="alert">Could not load the diagram ({error}). <button type="button" onClick={() => setAttempt((n) => n + 1)} data-testid="dg-retry">Try again</button></p> : pattern ? <PatternDiagram key={name} pattern={pattern} resetSignal={resetSignal} /> : <p className="muted">Loading...</p>}
     </>
   );
 }

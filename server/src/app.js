@@ -24,6 +24,14 @@ const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
 const CONFIG = process.env.CUSTOMER_CONFIG || path.resolve(HERE, '../../customer.config.json');
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+// A page address: every segment (after percent-decoding) is not a dot segment or a dot-file, and the last has no extension.
+export function isPageAddress(p) {
+  let decoded; try { decoded = decodeURIComponent(p); } catch { return false; }
+  const segs = decoded.split('/').filter((s) => s !== '');
+  if (segs.some((s) => s.startsWith('.') || s.includes('\\'))) return false;
+  return !(segs.length && segs[segs.length - 1].includes('.'));
+}
+
 export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -47,8 +55,15 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
   const noStore = (res) => res.set('Cache-Control', 'no-store');
   const ws = (req, res) => { const id = workspaceFrom(req); if (!id) res.status(400).json({ error: 'bad_workspace' }); return id; };
 
-  api.get('/story', (req, res) => { noStore(res); res.json(buildStory(castFor(req), verticalOf(req))); });
-  api.get('/diagram', (req, res) => { noStore(res); res.json(buildDiagram(castFor(req), DIAGRAM_NAMES.includes(req.query.name) ? req.query.name : DIAGRAM_NAMES[0])); });
+  // A query value the lab does not know is a 400 (as it is in a POST body), never a silent fall-back to the default. Absent = the default.
+  const queryVertical = (req, res) => { const v = req.query.vertical; if (v !== undefined && !(typeof v === 'string' && Object.hasOwn(VERTICALS, v))) { res.status(400).json({ error: 'bad_vertical', detail: 'the vertical is not one the lab has' }); return false; } return true; };
+  api.get('/story', (req, res) => { noStore(res); if (!queryVertical(req, res)) return; res.json(buildStory(castFor(req), verticalOf(req))); });
+  api.get('/diagram', (req, res) => {
+    noStore(res); if (!queryVertical(req, res)) return;
+    const name = req.query.name;
+    if (name !== undefined && !(typeof name === 'string' && DIAGRAM_NAMES.includes(name))) return res.status(400).json({ error: 'bad_diagram', detail: 'the diagram is not one the lab has' });
+    return res.json(buildDiagram(castFor(req), name ?? DIAGRAM_NAMES[0]));
+  });
   api.get('/info', (_req, res) => { noStore(res); res.json({ mode: defaultMode(), modes: ['mock', 'live'], simulated: true, release: '2026-11-02', unverified: true }); });
 
   api.get('/state', (req, res, next) => {
@@ -56,6 +71,7 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
       const id = ws(req, res); if (!id) return;
       noStore(res);
       const mode = modeOf(req.query.mode); if (!mode) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
+      if (!queryVertical(req, res)) return;
       const vertical = verticalOf(req);
       if (mode === 'mock') return res.json({ mode, vertical, workspace: id, ...mockState(table, vertical, req.query.scenario) });
       return res.json({ mode, vertical, workspace: id, state: liveState(id, workspaces, vertical, castFor(req)) });
@@ -97,7 +113,9 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
 
   if (fs.existsSync(path.join(webDist, 'index.html'))) {
     app.use(express.static(webDist));
-    app.get(/^\/(?!api\/|assets\/).*/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+    // The page is served for a page address only: no dot-file or dot segment, and no file extension in the last segment. A missing file with an extension
+    // (/favicon.ico, /x.js, /missing.css) is a 404, not the page (a script or a stylesheet that "loads" HTML hides the real problem). GET and HEAD both.
+    app.get(/^\/(?!api\/|assets\/).*/, (req, res, next) => (isPageAddress(req.path) ? res.sendFile(path.join(webDist, 'index.html')) : next()));
   }
   // The last two handlers catch everything that is left, for every method and every path: Express's default answers ("Cannot POST /<path>", or an HTML stack
   // trace with file paths) would echo the path the visitor typed, which may be a token. Fixed JSON, no path.

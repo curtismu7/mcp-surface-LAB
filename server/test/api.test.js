@@ -16,7 +16,12 @@ test('health, info and story answer; the story fills every token for every verti
       const s = await json(await get(url, `/api/story?vertical=${v}`));
       assert.ok(!/\{\{/.test(JSON.stringify(s)), v); assert.equal(s.vertical, v); assert.equal(s.scenarios.length, 8);
     }
-    assert.equal((await json(await get(url, '/api/story?vertical=__proto__'))).vertical, 'finance');
+    // N1: a vertical the lab does not have is a 400 on a GET as it is on a POST (it used to fall back to the default and answer 200)
+    for (const bad of ['__proto__', 'junk', 'constructor', 'FINANCE']) { const r = await get(url, `/api/story?vertical=${bad}`); assert.equal(r.status, 400, bad); assert.equal((await r.json()).error, 'bad_vertical'); }
+    const twice = await get(url, '/api/story?vertical=finance&vertical=health'); assert.equal(twice.status, 400, 'a repeated query value is not a vertical');
+    assert.equal((await get(url, '/api/state?mode=mock&vertical=junk')).status, 400); assert.equal((await get(url, '/api/state?mode=live&vertical=junk')).status, 400);
+    assert.equal((await get(url, '/api/diagram?vertical=junk')).status, 400);
+    assert.equal((await get(url, '/api/story')).status, 200, 'no vertical = the default'); assert.equal((await json(await get(url, '/api/story'))).vertical, 'finance');
     assert.equal((await get(url, '/api/health', {})).headers.get('cache-control'), 'no-store');
     assert.equal((await post(url, '/api/health', {})).status, 405);
   });
@@ -152,10 +157,11 @@ test('the netguard recorded zero outbound attempts across the whole API in both 
   assert.equal(guard.attempts.length, before, `outbound attempts: ${guard.attempts.slice(before).join(', ')}`);
 });
 
-test('the diagram endpoint serves the three diagram-studio/1 diagrams by name, falls back on an unknown name, and fills the cast', async () => {
+test('the diagram endpoint serves the three diagram-studio/1 diagrams by name, refuses an unknown name (400), and fills the cast', async () => {
   await withServer(async (url) => {
     for (const n of ['aggregate-cap', 'discovery-filter', 'passthrough-assertion']) { const d = await json(await get(url, `/api/diagram?name=${n}&vertical=health`)); assert.equal(d.name, n); assert.ok(!/\{\{/.test(JSON.stringify(d))); assert.ok(d.steps.length >= 7); }
-    assert.equal((await json(await get(url, '/api/diagram?name=__proto__'))).name, 'aggregate-cap');
+    for (const bad of ['__proto__', 'junk', '']) { const r = await get(url, `/api/diagram?name=${bad}`); assert.equal(r.status, 400, `name=${bad}`); assert.equal((await r.json()).error, 'bad_diagram'); }
+    assert.equal((await json(await get(url, '/api/diagram'))).name, 'aggregate-cap', 'no name = the first diagram');
   });
 });
 

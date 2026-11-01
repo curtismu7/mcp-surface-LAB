@@ -16,4 +16,16 @@ export function workspaceId() {
   return memo;
 }
 
-export const workspaceFetch = (url, opts = {}) => fetch(url, { ...opts, headers: { "content-type": "application/json", ...(opts.headers || {}), "x-workspace": workspaceId() } });
+// A stored id the server refuses (it fits the pattern but looks like a credential, e.g. 40 hex characters) would brick the tab: every call would be a 400.
+// So a 400 bad_workspace makes a NEW id, stored in its place, and the same request is sent once more.
+export const newWorkspace = () => { memo = null; try { window.sessionStorage.removeItem(KEY); } catch { /* blocked */ } return workspaceId(); };
+const send = (url, opts) => fetch(url, { ...opts, headers: { "content-type": "application/json", ...(opts.headers || {}), "x-workspace": workspaceId() } });
+export async function workspaceFetch(url, opts = {}) {
+  const r = await send(url, opts);
+  if (r.status !== 400) return r;
+  let refused = false;
+  try { refused = (await r.clone().json()).error === "bad_workspace"; } catch { /* not JSON */ }
+  if (!refused) return r;
+  newWorkspace();
+  return send(url, opts);
+}

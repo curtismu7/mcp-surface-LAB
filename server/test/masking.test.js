@@ -17,7 +17,8 @@ test('every credential shape is found and masked', () => {
 test('cleanFree: masks, strips control and bidi characters, collapses space, caps, and never throws', () => {
   const v = SECRETS.github;
   assert.ok(!cleanFree(`token ${v}`).includes(v));
-  assert.equal(cleanFree('a\u0000b\u202ec  d'), 'a bc d', 'a control character becomes a space, a bidi character is deleted');
+  assert.equal(cleanFree('a\u0000b\u202ec  d'), 'abc d', 'a control character and a bidi character are DELETED (a space between words stays; TAB, LF and CR are separators)');
+  assert.equal(cleanFree('one\ttwo\nthree\r\nfour\u2028five'), 'one two three four five', 'TAB, LF, CR, U+2028 stay readable as spaces');
   assert.equal(cleanFree('x'.repeat(5000)).length <= MAX_FREE, true);
   assert.equal(cleanFree(undefined), ''); assert.equal(cleanFree(null), ''); assert.equal(cleanFree({}), '[object Object]');
   assert.equal(cleanFree('I need read access to review the change for the release'), 'I need read access to review the change for the release', 'ordinary text is left alone');

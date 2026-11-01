@@ -134,10 +134,24 @@ export function filterWire(wire, keep) {
   const hidden = stats.frames.flatMap((f) => f.hidden || []).filter((n) => typeof n === 'string' && n.length >= 2);
   if (hidden.length) {
     const blob = JSON.stringify(messages);
-    for (const n of hidden) if (blob.includes(JSON.stringify(n).slice(1, -1))) throw refuse('hidden_name_in_frame', 'the upstream response carried a name the caller may not see outside a listing, so the whole response was refused', 502);
+    for (const n of hidden) if (containsWholeName(blob, JSON.stringify(n).slice(1, -1))) throw refuse('hidden_name_in_frame', 'the upstream response carried a name the caller may not see outside a listing, so the whole response was refused', 502);
   }
   const gz = enc === 'gzip';
   return { headers: { 'content-type': type, ...(gz ? { 'content-encoding': 'gzip' } : {}) }, chunks: splitChunks(gz ? zlib.gzipSync(outBody) : outBody), stats, messages };
+}
+
+// True when `name` occurs in `blob` as a whole name: not inside a longer name. A character that can be part of a name (a letter, a digit, _ or -) on either
+// side means the occurrence belongs to a longer word ("list" inside "listItems" or "list_cases" is not "list"); a quote, a space, a full stop, a bracket or
+// any other character is a boundary. The check stays fail-closed: a hidden name that stands as a tool name, in a description sentence or anywhere else as its
+// own word still refuses the whole response. (A hidden name embedded in a longer word is NOT detected: that is the price of not over-refusing, and it is stated in the README.)
+export const NAME_CHAR = /[\p{L}\p{N}_-]/u;
+export function containsWholeName(blob, name) {
+  if (!name) return false;
+  for (let at = blob.indexOf(name); at !== -1; at = blob.indexOf(name, at + 1)) {
+    const before = at === 0 ? '' : blob.slice(at - 1, at); const after = blob.slice(at + name.length, at + name.length + 1);
+    if (!(before && NAME_CHAR.test(before)) && !(after && NAME_CHAR.test(after))) return true;
+  }
+  return false;
 }
 
 // What the client does with the wire it finally receives: decode and parse, no filtering. Used to show the agent's view and by the tests.

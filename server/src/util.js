@@ -1,5 +1,5 @@
 // Small shared helpers. No I/O. Everything a visitor types passes through one of these before it is used as a key, an id or text.
-import { cleanFree, findCredentials } from './credentials.js';
+import { cleanFree, findCredentials, stripInvisible } from './credentials.js';
 
 export const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export const own = (o, k) => typeof k === 'string' && isObj(o) && Object.hasOwn(o, k);
@@ -14,7 +14,7 @@ export function scrub(value, depth = 0) {
 }
 
 // True when the text would be masked by the credential detectors (a typed value must never become an id, a name or a key).
-export const credentialShaped = (s) => findCredentials(String(s)).length > 0;
+export const credentialShaped = (s) => findCredentials(stripInvisible(String(s))).length > 0; // control and invisible characters deleted first
 
 // An identifier the visitor typed: a string that fits the form and does not look like a credential. Returns it, or null.
 export function safeId(v, re, max = 40) {

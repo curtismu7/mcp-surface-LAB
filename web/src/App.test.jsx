@@ -12,7 +12,7 @@ import { visible } from "./safeText";
 import { forgetWorkspace } from "./workspace";
 
 const C = VERTICALS.finance;
-let server; let base; const realFetch = globalThis.fetch; let seen = [];
+let server; let base; const realFetch = globalThis.fetch; let seen = []; let failDiagram = 0; // failDiagram: how many /api/diagram requests to abort (a dropped connection)
 beforeAll(async () => {
   const health = createHealth({ runChecks: async () => [], intervalMs: 3_600_000 });
   ({ server, url: base } = await startHttpServer({ port: 0, host: "127.0.0.1", app: createApp({ health, configFile: "/nonexistent/customer.config.json", workspaces: createWorkspaces({ max: 5000 }) }) }));
@@ -20,11 +20,12 @@ beforeAll(async () => {
   globalThis.fetch = async (u, init = {}) => {
     const url = typeof u === "string" && u.startsWith("/") ? `${base}${u}` : u;
     seen.push({ url: String(url), body: typeof init.body === "string" ? init.body : "" });
+    if (failDiagram > 0 && String(url).includes("/api/diagram")) { failDiagram -= 1; throw new TypeError("Failed to fetch"); }
     return realFetch(url, { ...init, headers: { origin: base, ...(init.headers || {}) } });
   };
 });
 afterAll(async () => { globalThis.fetch = realFetch; await new Promise((r) => server.close(r)); });
-beforeEach(() => { cleanup(); forgetWorkspace(); seen = []; try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ } window.location.hash = ""; });
+beforeEach(() => { cleanup(); forgetWorkspace(); seen = []; failDiagram = 0; try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ } window.location.hash = ""; });
 
 // Every wait is on a STATE (an element enabled or a text present), never on a clock; the timeouts are generous hang guards because the suite runs at machine load 60-500.
 const T = { timeout: 120000 };
@@ -224,6 +225,30 @@ describe("helpers", () => {
     await userEvent.click(screen.getByTestId("simulate")); await screen.findByTestId("pattern-now", {}, T);
     await userEvent.click(screen.getByTestId("pattern-reset")); await userEvent.click(screen.getByTestId("dg-discovery-filter"));
     await waitFor(() => expect(screen.getByText(/Entitlement-aware discovery: removed in flight/)).toBeInTheDocument(), T);
+  });
+  it("diagrams: a request that fails shows a retry, keeps the diagram buttons, and the failure clears on retry and on choosing another diagram (N4)", async () => {
+    failDiagram = 1;
+    await mount(); await tab("Diagram");
+    const alert = await screen.findByRole("alert", {}, T);
+    expect(alert).toHaveTextContent(/Could not load the diagram/);
+    for (const id of ["aggregate-cap", "discovery-filter", "passthrough-assertion"]) expect(screen.getByTestId(`dg-${id}`)).toBeInTheDocument(); // the buttons are still there
+    await userEvent.click(screen.getByTestId("dg-retry"));
+    await screen.findByTestId("simulate", {}, T);
+    expect(screen.queryByRole("alert")).toBeNull();
+    failDiagram = 1; await userEvent.click(screen.getByTestId("dg-discovery-filter"));
+    await screen.findByRole("alert", {}, T);
+    await userEvent.click(screen.getByTestId("dg-passthrough-assertion")); // choosing another diagram also clears it
+    await screen.findByTestId("simulate", {}, T);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("a stored workspace id the server refuses (40 hex characters) is replaced and the request is sent again (N5)", async () => {
+    const bad = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+    window.sessionStorage.setItem("msf.workspace", bad); forgetWorkspace();
+    await mount();
+    const sent = seen.filter((r) => r.url.includes("/api/state"));
+    expect(sent.length).toBeGreaterThanOrEqual(2); // the refused one, then the retry
+    const stored = window.sessionStorage.getItem("msf.workspace");
+    expect(stored).not.toBe(bad); expect(stored).toMatch(/^w-[0-9a-f]{16}$/);
   });
   it("the talk track shows the Why it matters entries as Ping claims", async () => {
     await mount(); await tab("Talk track");

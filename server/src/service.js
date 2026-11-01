@@ -1,7 +1,7 @@
 // The glue between the HTTP layer and the engine: Mock reads generated tables, Live drives the workspace's engine. Every action gets one W3C trace and a
 // list of hops (the raw request and response panes), with anything credential-shaped masked.
 import { Engine } from './engine.js';
-import { perform } from './actions.js';
+import { isPure, perform } from './actions.js';
 import { newTrace, formatTraceparent } from './trace.js';
 import { scrub } from './util.js';
 
@@ -20,8 +20,9 @@ export function liveState(ws, workspaces, vertical, cast) {
 export function runAction({ ws, workspaces, vertical, cast, op, params, traceparent, route, engine }) {
   // A new workspace is only kept if the request CHANGED something the visitor can see: a refused request (bad parameters, an unknown user) and a pure preview
   // leave no workspace behind, so they cannot use up the cap. The cap itself is checked first, before any work.
+  // A PURE action (the OpenAPI preview) reads nothing and changes nothing, so it never needs a slot: with no workspace yet it runs on a throw-away engine, even at the cap.
   let e = engine; let fresh = null;
-  if (!e) { e = workspaces.peek(ws, vertical) && workspaces.engine(ws, vertical, cast); if (!e) { workspaces.assertRoom(ws); e = new Engine(cast); fresh = JSON.stringify(e.snapshot()); } }
+  if (!e) { e = workspaces.peek(ws, vertical) && workspaces.engine(ws, vertical, cast); if (!e) { if (isPure(op)) e = new Engine(cast); else { workspaces.assertRoom(ws); e = new Engine(cast); fresh = JSON.stringify(e.snapshot()); } } }
   const t = newTrace(traceparent);
   const root = t.span();
   e.trace = { traceId: t.traceId, span: t.span }; e.hops = []; e.hopsTruncated = false;

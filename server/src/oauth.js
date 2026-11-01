@@ -108,7 +108,8 @@ export class AuthServer {
     const sc = scope === undefined ? ['mcp:tools'] : Array.isArray(scope) ? scope : null;
     if (!sc || !sc.length || sc.length > 3 || !sc.every((s) => SCOPES.includes(s))) throw refuse('invalid_scope', `scopes: ${SCOPES.join(', ')}`);
     this.sweep(now);
-    if (Object.keys(this.codes).length >= LIMITS.codes) throw refuse('too_many_codes', 'too many pending authorization codes: reset to start over', 409);
+    // Only a code that can still be exchanged is pending: a used one is kept (until it expires) to catch a replay, but it does not take a slot.
+    if (Object.values(this.codes).filter((c) => !c.used).length >= LIMITS.codes) throw refuse('too_many_codes', 'too many pending authorization codes: reset to start over', 409);
     const code = `mock-code-${String(++this.n.code).padStart(4, '0')}`;
     this.codes[code] = { clientId: cl.id, redirectUri, challenge: codeChallenge, scope: [...new Set(sc)], user, expiresAt: now + LIMITS.codeTtl, used: false, family: null };
     return { code, expires_in: LIMITS.codeTtl };
@@ -173,7 +174,7 @@ export class AuthServer {
       issuer: this.issuer,
       clients: Object.values(this.clients).map((c) => ({ id: c.id, kind: c.kind, name: c.name, redirectUris: c.redirectUris })),
       cimd: { clients: this.cimd.clients, cacheTTLHours: this.cimd.cacheTTLHours, fetches: this.cimd.fetches, cacheHits: this.cimd.hits, cache: Object.entries(this.cimd.cache).map(([url, v]) => ({ URL: url, FetchedAt: v.fetchedAt, expiresAt: v.expiresAt, Error: v.error || '' })) },
-      pendingCodes: live(this.codes), liveAccessTokens: live(this.access), liveRefreshTokens: Object.values(this.refresh).filter((x) => !x.used && x.expiresAt > now).length,
+      pendingCodes: Object.values(this.codes).filter((c) => !c.used && c.expiresAt > now).length, liveAccessTokens: live(this.access), liveRefreshTokens: Object.values(this.refresh).filter((x) => !x.used && x.expiresAt > now).length,
     };
   }
 }

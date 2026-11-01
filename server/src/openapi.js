@@ -7,7 +7,10 @@ import { cleanFree, decodePercent, findCredentials, stripInvisible } from './cre
 import { isObj } from './util.js';
 import { MOCK_BACKEND_ITEMS } from './world.js';
 
-export const LIMITS = { expandNodes: 1500, expandTotal: 20000, chars: 40000, depth: 40, nodes: 20000, paths: 100, operations: 60, params: 25, refDepth: 12, schemaChars: 8000, argsChars: 8000, enumItems: 50 };
+export const LIMITS = { expandNodes: 1500, expandTotal: 20000, chars: 40000, depth: 40, nodes: 20000, paths: 100, operations: 60, params: 25, refDepth: 12, schemaChars: 8000, argsChars: 8000, enumItems: 50, requiredItems: 60, allOfBranches: 10, paramEntries: 80, securitySchemes: 10 };
+// The longest list the lab reads under each of these keys, wherever it sits in the document. A longer one refuses the WHOLE specification, before any work is done
+// on it (nothing is cut, nothing is skipped): the work per schema node is bounded by these, not only the number of nodes.
+const LIST_CAPS = { required: LIMITS.requiredItems, enum: LIMITS.enumItems, allOf: LIMITS.allOfBranches, parameters: LIMITS.paramEntries };
 const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace'];
 const TYPES = new Set(['string', 'number', 'integer', 'boolean', 'object', 'array']);
 const HEADER_NAME = /^[A-Za-z][A-Za-z0-9-]{0,39}$/;
@@ -42,6 +45,7 @@ export function parseSpec(text) {
     for (const k of Object.keys(n)) {
       if (k === '__proto__') throw refuse('forbidden_key', 'the specification contains a key the lab refuses');
       const v = n[k];
+      if (Array.isArray(v) && Object.hasOwn(LIST_CAPS, k) && v.length > LIST_CAPS[k]) throw refuse('list_too_long', `a "${k}" list holds more than ${LIST_CAPS[k]} entries: the lab refuses the whole document rather than reading part of it`, 413);
       if (k === '$ref') { if (typeof v !== 'string' || !v.startsWith('#/')) throw refuse('external_ref_refused', 'only local "#/" references are resolved: remote, file and relative references are refused'); continue; }
       if (v !== null && typeof v === 'object') work.push(v);
     }
@@ -63,11 +67,15 @@ function pointer(root, ref) {
 // Expands a schema into a self-contained JSON schema: $ref resolved (local only), cycles cut, unsupported keywords dropped.
 // The expansion budget counts nodes DURING expansion (a spec whose levels each $ref the next one is small as text and exponential once expanded).
 let budget = { tool: 0, total: 0 };
-let visited = 0; // schema nodes expanded since generateTools began: tests assert this count (a bound on the work done), never elapsed time
+let visited = 0; // units of schema work since generateTools began (a node expanded, a list entry read, a parameter looked at): tests assert this count, never elapsed time
 export const expandedNodes = () => visited;
+// Every unit of work is paid for here, so the cost of a document is bounded by the budget and not by how it is laid out.
+function charge(units) {
+  visited += units; budget.tool -= units; budget.total -= units;
+  if (budget.tool < 0 || budget.total < 0) throw refuse('schema_too_large', `the schemas expand to more than ${LIMITS.expandNodes} units of work for one tool (or ${LIMITS.expandTotal} in all; a node or a list entry is one unit): the lab refuses the whole document`, 413);
+}
 function expand(root, node, stack, depth) {
-  visited++;
-  if (--budget.tool < 0 || --budget.total < 0) throw refuse('schema_too_large', `the schemas expand to more than ${LIMITS.expandNodes} nodes for one tool (or ${LIMITS.expandTotal} in all): the lab refuses the whole document`, 413);
+  charge(1);
   if (depth > LIMITS.refDepth + 20) throw refuse('spec_too_deep', 'a schema nests too deeply');
   if (!isObj(node)) return {};
   if (Object.hasOwn(node, '$ref')) {
@@ -80,13 +88,14 @@ function expand(root, node, stack, depth) {
   let n = node;
   if (Array.isArray(node.allOf)) { // allOf: merge the properties and required lists of every branch
     const merged = { ...node }; delete merged.allOf; const props = { ...(isObj(node.properties) ? node.properties : {}) }; const req = [...(Array.isArray(node.required) ? node.required : [])];
-    for (const b of node.allOf.slice(0, 10)) { const e = expand(root, b, stack, depth + 1); Object.assign(props, e.properties || {}); req.push(...(e.required || [])); if (e.type && !merged.type) merged.type = e.type; }
+    charge(node.allOf.length);
+    for (const b of node.allOf) { const e = expand(root, b, stack, depth + 1); Object.assign(props, e.properties || {}); req.push(...(e.required || [])); if (e.type && !merged.type) merged.type = e.type; }
     merged.properties = props; merged.required = req; n = merged;
   }
   if (typeof n.type === 'string' && TYPES.has(n.type)) out.type = n.type;
   if (typeof n.description === 'string') out.description = cleanFree(n.description, 200);
   if (typeof n.format === 'string') out.format = cleanFree(n.format, 30);
-  if (Array.isArray(n.enum)) out.enum = n.enum.filter((x) => ['string', 'number', 'boolean'].includes(typeof x)).slice(0, LIMITS.enumItems).map((x) => (typeof x === 'string' ? cleanFree(x, 60) : x));
+  if (Array.isArray(n.enum)) { charge(n.enum.length); out.enum = n.enum.filter((x) => ['string', 'number', 'boolean'].includes(typeof x)).map((x) => (typeof x === 'string' ? cleanFree(x, 60) : x)); }
   for (const k of ['minimum', 'maximum', 'minLength', 'maxLength']) if (Number.isFinite(n[k])) out[k] = n[k];
   if (typeof n.additionalProperties === 'boolean') out.additionalProperties = n.additionalProperties;
   if (isObj(n.items)) out.items = expand(root, n.items, stack, depth + 1);
@@ -95,15 +104,20 @@ function expand(root, node, stack, depth) {
     out.properties = {};
     for (const k of names) Object.defineProperty(out.properties, safePropName(k), { value: expand(root, n.properties[k], stack, depth + 1), enumerable: true, writable: true, configurable: true });
   }
-  if (Array.isArray(n.required)) out.required = [...new Set(n.required.filter((x) => typeof x === 'string').map(safePropName))];
+  if (Array.isArray(n.required)) { charge(n.required.length); out.required = [...new Set([...new Set(n.required.filter((x) => typeof x === 'string'))].map(safePropName))]; } // each distinct entry is judged once
   return out;
 }
 
 // A name taken from the specification is judged on its RAW text (invisible characters deleted, NFKC, percent-decoded), BEFORE it is turned into an identifier:
 // sanitising first would turn "password: hunter2" into "password__hunter2", which no detector matches (review finding).
+const verdicts = new Map(); // text -> verdict, so a name repeated across operations and parameters is judged once (cleared per document and when large)
 export function leaky(raw) {
   const t = stripInvisible(String(raw).slice(0, 2000));
-  return findCredentials(t).length > 0 || findCredentials(decodePercent(t)).length > 0;
+  if (verdicts.has(t)) return verdicts.get(t);
+  if (verdicts.size > 5000) verdicts.clear();
+  const v = findCredentials(t).length > 0 || findCredentials(stripInvisible(decodePercent(t))).length > 0;
+  verdicts.set(t, v);
+  return v;
 }
 // A parameter, header or scheme name that looks like a credential is refused whole: it would be stored and shown as a name.
 const clean = (raw) => { if (leaky(raw)) throw refuse('credential_in_spec', 'a name in the specification is shaped like a secret, so the lab refuses the document (masking is a heuristic, write plain names)'); return raw; };
@@ -125,13 +139,20 @@ function toolName(op, method, path, used) {
   return { name: final, rule };
 }
 
+// The two report lists are shown up to SHOWN entries; what does not fit is COUNTED in a last warning line, never dropped without a word.
+const SHOWN = 40;
+const shown = (warnings, notExposed) => {
+  const all = notExposed.length > SHOWN ? [...warnings, `${notExposed.length - SHOWN} more parameters the gateway does not expose are not listed`] : warnings;
+  return all.length > SHOWN ? [...all.slice(0, SHOWN - 1), `${all.length - SHOWN + 1} more warnings are not listed`] : all;
+};
+
 export function generateTools(spec) {
   budget = { tool: LIMITS.expandNodes, total: LIMITS.expandTotal }; visited = 0;
   const paths = isObj(spec.paths) ? spec.paths : {};
   const pathKeys = Object.keys(paths);
   if (pathKeys.length > LIMITS.paths) throw refuse('too_many_paths', `the specification has more than ${LIMITS.paths} paths`, 413);
   const tools = []; const used = new Set(); const notExposed = []; const warnings = [];
-  const params = (list, scope) => (Array.isArray(list) ? list : []).slice(0, 80).map((p) => (isObj(p) && typeof p.$ref === 'string' ? pointer(spec, p.$ref) : p)).filter(isObj).map((p) => ({ p, scope }));
+  const params = (list, scope) => (Array.isArray(list) ? list : []).map((p) => (isObj(p) && typeof p.$ref === 'string' ? pointer(spec, p.$ref) : p)).filter(isObj).map((p) => ({ p, scope }));
   for (const path of pathKeys) {
     if (!path.startsWith('/')) throw refuse('bad_path', 'a path does not start with "/"');
     const item = paths[path];
@@ -141,11 +162,13 @@ export function generateTools(spec) {
       const op = item[method];
       if (!isObj(op)) continue;
       if (tools.length >= LIMITS.operations) throw refuse('too_many_operations', `the specification has more than ${LIMITS.operations} operations: the lab refuses it whole rather than dropping some`, 413);
+      budget.tool = LIMITS.expandNodes;
       const { name, rule } = toolName(op, method, path, used);
       const merged = new Map();
+      charge((Array.isArray(item.parameters) ? item.parameters.length : 0) + (Array.isArray(op.parameters) ? op.parameters.length : 0)); // looking at a parameter is work too
       for (const { p } of [...params(item.parameters), ...params(op.parameters)]) if (typeof p.name === 'string' && typeof p.in === 'string') merged.set(`${p.in}:${clean(p.name)}`, p);
       if (merged.size > LIMITS.params) throw refuse('too_many_parameters', `an operation has more than ${LIMITS.params} parameters`, 413);
-      budget.tool = LIMITS.expandNodes;
+      budget.tool = LIMITS.expandNodes; // the per-tool budget starts again for the schemas of this tool
       const properties = {}; const required = []; const pathParams = []; const queryParams = []; const argNames = new Set(['body']);
       for (const p of merged.values()) {
         if (p.in === 'header' || p.in === 'cookie') { notExposed.push({ tool: name, in: p.in, why: p.in === 'header' ? 'headers are injected by the gateway, not chosen by the agent' : 'cookies are session state: the calling agent\'s responsibility' }); continue; }
@@ -176,7 +199,9 @@ export function generateTools(spec) {
   // Authentication to the backend is header-based only: a header apiKey or an HTTP scheme is injected by the gateway; everything else is the calling agent's job.
   const auth = [];
   const schemes = isObj(spec.components) && isObj(spec.components.securitySchemes) ? spec.components.securitySchemes : {};
-  for (const k of Object.keys(schemes).slice(0, 10)) {
+  const schemeKeys = Object.keys(schemes);
+  if (schemeKeys.length > LIMITS.securitySchemes) throw refuse('too_many_security_schemes', `the specification has more than ${LIMITS.securitySchemes} security schemes: the lab refuses it whole rather than listing some`, 413);
+  for (const k of schemeKeys) {
     const s = schemes[k]; if (!isObj(s)) continue;
     const label = safePropName(k);
     if (s.type === 'apiKey' && s.in === 'header' && typeof s.name === 'string' && HEADER_NAME.test(clean(s.name))) auth.push({ scheme: label, handled: 'header', header: s.name });
@@ -186,7 +211,7 @@ export function generateTools(spec) {
   }
   const info = isObj(spec.info) ? spec.info : {};
   const server = Array.isArray(spec.servers) && isObj(spec.servers[0]) && typeof spec.servers[0].url === 'string' ? cleanFree(spec.servers[0].url, 100) : '(none)';
-  return { api: { title: cleanFree(info.title ?? 'untitled', 80), version: cleanFree(info.version ?? '', 30), server }, tools, auth, notExposed: notExposed.slice(0, 40), warnings: warnings.slice(0, 40) };
+  return { api: { title: cleanFree(info.title ?? 'untitled', 80), version: cleanFree(info.version ?? '', 30), server }, tools, auth, notExposed: notExposed.slice(0, SHOWN), warnings: shown(warnings, notExposed) };
 }
 
 // A small JSON-schema check for tool arguments (type, required, enum, bounds, nested objects and arrays). Never builds a regex from the spec.

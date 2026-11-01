@@ -82,7 +82,10 @@ export async function runChecks({ env = process.env, table = MOCK_TABLE } = {}) 
   const filled = JSON.stringify([...Object.keys(VERTICALS).map((v) => buildStory(VERTICALS[v], v)), table]);
   const hosts = scanHosts(filled);
   add('story-hosts', hosts.length ? 'fail' : 'pass', hosts.length ? `non-reserved hosts: ${hosts.join(', ')}` : 'every host in the story data and the Mock table is .invalid or .example');
-  const keys = scanKeys(filled); const creds = findCredentials(filled).filter((x) => x.id !== 'key-like' && x.id !== 'long-blob');
+  // The credential detectors read TEXT: they are run on each string value, not on the JSON dump (in a dump, `"tokens":120` is a JSON key and a number, not an assignment).
+  const leaves = []; const todo = [JSON.parse(filled)];
+  while (todo.length) { const x = todo.pop(); if (typeof x === 'string') leaves.push(x); else if (x && typeof x === 'object') todo.push(...Object.values(x)); }
+  const keys = scanKeys(filled); const creds = leaves.flatMap((t) => findCredentials(t)).filter((x) => x.id !== 'key-like' && x.id !== 'long-blob');
   add('story-keys', keys.length || creds.length ? 'fail' : 'pass', keys.length || creds.length ? 'credential-shaped text in the story data' : 'no credential-shaped value anywhere in the story data or the Mock table');
   const story = buildStory(VERTICALS.finance, 'finance');
   add('masking', JSON.stringify(maskDeep(story)) === JSON.stringify(story) ? 'pass' : 'fail', 'the response mask leaves the story untouched (it only changes credential-shaped values)');
