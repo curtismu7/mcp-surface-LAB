@@ -56,7 +56,7 @@ function* variants(p, v) {
 
 test('every action is covered by a skeleton (a new action must be added to the echo test)', () => assert.deepEqual(Object.keys(SKEL).sort(), [...OP_NAMES].sort()));
 
-test('typing every credential shape into every string and every key of every action never echoes it: answers, hops, state afterwards, process output', { timeout: 280000 }, async () => {
+test('typing every credential shape into every string and every key of every action never echoes it: answers, hops, state afterwards, process output', { timeout: 3_600_000 }, async () => {
   const out = []; const realOut = process.stdout.write.bind(process.stdout); const realErr = process.stderr.write.bind(process.stderr);
   await withServer(async (url) => {
     process.stdout.write = (c, ...a) => { out.push(String(c)); return realOut(c, ...a); }; process.stderr.write = (c, ...a) => { out.push(String(c)); return realErr(c, ...a); };

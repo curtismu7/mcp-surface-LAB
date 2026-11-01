@@ -2,7 +2,7 @@
 // the token cap, multi-byte text on a stream, names outside listings, name collisions with the aggregate path, recordings that never truncate, and the smaller items.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateTools, parseSpec } from '../src/openapi.js';
+import { expandedNodes, generateTools, parseSpec } from '../src/openapi.js';
 import { cleanFree } from '../src/credentials.js';
 import { maskDeep } from '../src/mask.js';
 import { filterWire, encodeAnswer, splitChunks } from '../src/wire.js';
@@ -24,25 +24,27 @@ const bomb = (levels, fan = 10) => {
   for (let l = 0; l < levels; l++) { const props = {}; for (let i = 0; i < fan; i++) props[`p${i}`] = l === levels - 1 ? { type: 'string' } : { $ref: `#/components/schemas/L${l + 1}` }; schemas[`L${l}`] = { type: 'object', properties: props }; }
   return JSON.stringify({ openapi: '3.0.0', info: { title: 't', version: '1' }, components: { schemas }, paths: { '/a': { post: { operationId: 'a', requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/L0' } } } } } } } });
 };
-test('B2: a small spec whose levels each reference the next ten times is refused cleanly and FAST, from 5 to 12 levels (the expansion is budgeted while it happens)', () => {
+test('B2: a small spec whose levels each reference the next ten times is refused cleanly after a BOUNDED amount of work, from 2 to 12 levels (the expansion is budgeted while it happens)', () => {
+  // No clock: the proof is the number of schema nodes visited. Unbudgeted, 12 levels of fan 10 would visit 10^12 of them; budgeted, never more than the total budget (plus the node that trips it).
   for (let levels = 2; levels <= 12; levels++) {
-    const t0 = Date.now(); let code;
+    let code;
     try { generateTools(parseSpec(bomb(levels))); code = 'ok'; } catch (e) { code = e.code; }
-    const ms = Date.now() - t0;
-    assert.ok(ms < 1000, `${levels} levels took ${ms} ms`);
+    assert.ok(expandedNodes() <= 20001, `${levels} levels visited ${expandedNodes()} nodes`);
     if (levels >= 5) assert.equal(code, 'schema_too_large', `${levels} levels`);
+    if (levels >= 5) assert.ok(expandedNodes() > 1500, `${levels} levels: the per-tool budget (1500) is what stopped it, so more than that was visited`);
   }
   assert.equal(generateTools(parseSpec(bomb(2))).tools.length, 1, 'a modest spec still works');
+  assert.ok(expandedNodes() < 200, 'and visits few nodes');
   assert.equal(generateTools(parseSpec(sample)).tools.length, 4);
 });
-test('B2: the bomb through the HTTP API (Mock and Live) is a quick 413 and the event loop stays free', async () => {
+test('B2: the bomb through the HTTP API (Mock and Live) is a 413 and the server still answers afterwards', async () => {
   await withServer(async (url) => {
     for (const mode of ['mock', 'live']) {
-      const t0 = Date.now();
       const r = await post(url, '/api/act/oaPreview', { mode, vertical: 'finance', params: { spec: bomb(9) } }, W(`bomb-${mode}`));
-      assert.equal(r.status, 413); assert.equal((await r.json()).error, 'schema_too_large'); assert.ok(Date.now() - t0 < 2000);
+      assert.equal(r.status, 413); assert.equal((await r.json()).error, 'schema_too_large');
+      assert.ok(expandedNodes() <= 20001, 'the work done for the refusal is bounded');
     }
-    const t1 = Date.now(); assert.equal((await get(url, '/api/health')).status, 200); assert.ok(Date.now() - t1 < 1000);
+    assert.equal((await get(url, '/api/health')).status, 200);
   });
 });
 

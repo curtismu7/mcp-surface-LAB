@@ -63,7 +63,10 @@ function pointer(root, ref) {
 // Expands a schema into a self-contained JSON schema: $ref resolved (local only), cycles cut, unsupported keywords dropped.
 // The expansion budget counts nodes DURING expansion (a spec whose levels each $ref the next one is small as text and exponential once expanded).
 let budget = { tool: 0, total: 0 };
+let visited = 0; // schema nodes expanded since generateTools began: tests assert this count (a bound on the work done), never elapsed time
+export const expandedNodes = () => visited;
 function expand(root, node, stack, depth) {
+  visited++;
   if (--budget.tool < 0 || --budget.total < 0) throw refuse('schema_too_large', `the schemas expand to more than ${LIMITS.expandNodes} nodes for one tool (or ${LIMITS.expandTotal} in all): the lab refuses the whole document`, 413);
   if (depth > LIMITS.refDepth + 20) throw refuse('spec_too_deep', 'a schema nests too deeply');
   if (!isObj(node)) return {};
@@ -123,7 +126,7 @@ function toolName(op, method, path, used) {
 }
 
 export function generateTools(spec) {
-  budget = { tool: LIMITS.expandNodes, total: LIMITS.expandTotal };
+  budget = { tool: LIMITS.expandNodes, total: LIMITS.expandTotal }; visited = 0;
   const paths = isObj(spec.paths) ? spec.paths : {};
   const pathKeys = Object.keys(paths);
   if (pathKeys.length > LIMITS.paths) throw refuse('too_many_paths', `the specification has more than ${LIMITS.paths} paths`, 413);

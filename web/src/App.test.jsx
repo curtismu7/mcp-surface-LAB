@@ -26,7 +26,8 @@ beforeAll(async () => {
 afterAll(async () => { globalThis.fetch = realFetch; await new Promise((r) => server.close(r)); });
 beforeEach(() => { cleanup(); forgetWorkspace(); seen = []; try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ } window.location.hash = ""; });
 
-const T = { timeout: 20000 };
+// Every wait is on a STATE (an element enabled or a text present), never on a clock; the timeouts are generous hang guards because the suite runs at machine load 60-500.
+const T = { timeout: 120000 };
 const mount = async () => { render(<App />); await screen.findByTestId("members", {}, T); };
 const tab = (name) => userEvent.click(screen.getByRole("tab", { name }));
 const click = async (id) => { await waitFor(() => expect(screen.getByTestId(id)).toBeEnabled(), T); await userEvent.click(screen.getByTestId(id)); };

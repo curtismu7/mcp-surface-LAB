@@ -8,5 +8,5 @@ const api = { target: `http://127.0.0.1:${Number(process.env.PORT) || 7350}` };
 export default defineConfig({
   plugins: [react()],
   server: { host: "127.0.0.1", port: Number(process.env.VITE_PORT) || 7351, strictPort: true, proxy: { "/api": api } },
-  test: { environment: "jsdom", globals: true, setupFiles: "./src/testSetup.js", testTimeout: 30000 },
+  test: { environment: "jsdom", globals: true, setupFiles: "./src/testSetup.js", testTimeout: 600000, hookTimeout: 120000 },
 });
