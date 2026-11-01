@@ -105,3 +105,10 @@ test('a PGP private key block and fullwidth look-alikes of a token are masked to
   assert.ok(!cleanFree(`k ${full}`).includes('Zq9') && !cleanFree(`k ${full}`).includes('ｇｈｐ') || cleanFree(`k ${full}`).includes('[masked:'));
   assert.match(cleanFree(`k ${full}`), /\[masked:/);
 });
+
+test('two assignments with no space between them (minified JSON) are masked one by one, so the second value cannot survive (review fix)', () => {
+  const t = ['{"a":"p', 'w: Hunter2Secret!","b":"p', 'w: Other3Secret!"}'].join('');
+  const out = maskText(t);
+  assert.ok(!out.includes('Hunter2Secret') && !out.includes('Other3Secret'), out);
+  assert.ok(!cleanFree(t, 300).includes('Other3Secret'));
+});

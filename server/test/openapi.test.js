@@ -185,3 +185,16 @@ test('a call to a generated tool through an aggregate works and is namespaced to
   assert.ok(listNames(e, U, { kind: 'aggregate', id: 'all-in-one' }).includes('invoices__getItem'));
   assert.equal(codeOf(mcp(e, U, { kind: 'aggregate', id: 'all-in-one' }, 'tools/call', { name: 'invoices__getItem', arguments: { id: 'i-1' } })), 'ok');
 });
+
+test('names are judged on their raw text: a header, parameter or scheme name shaped like a secret refuses the document; a plain-language secret in an id falls back (review fix)', () => {
+  const key = ['Zq9Xk2Lm8R', 't4Vb7Nc1Hd', '5Fj3Gs6Pw0Y'].join(''); const pw = ['p', 'w: Tr0ub4dor3'].join('');
+  const withAuth = (name) => ({ components: { securitySchemes: { k: { type: 'apiKey', in: 'header', name } } } });
+  assert.equal(code(() => gen({ '/x': { get: {} } }, withAuth(key))), 'credential_in_spec');
+  assert.equal(code(() => gen({ '/x': { get: {} } }, withAuth('a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'))), 'credential_in_spec');
+  assert.equal(code(() => gen({ '/x': { get: {} } }, withAuth('X-Api-Key'))), 'passed', 'an ordinary header name is still injected');
+  assert.equal(code(() => gen({ '/x': { get: { parameters: [{ name: pw, in: 'query' }] } } })), 'credential_in_spec');
+  const g = gen({ '/x': { get: { operationId: pw }, post: { operationId: ['password', ': hunter2'].join('') } } });
+  assert.deepEqual(g.tools.map((t) => t.name), ['get_x', 'post_x']);
+  const p = gen({ '/x': { post: { operationId: 'a', requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { [pw]: { type: 'string' } }, required: [pw] } } } } } } }, { components: { securitySchemes: { [pw]: { type: 'http', scheme: 'bearer' } } } });
+  assert.ok(!JSON.stringify(p).includes('Tr0ub4dor3'));
+});

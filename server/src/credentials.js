@@ -4,6 +4,7 @@
 export const MAX_FREE = 400;
 
 const D = (id, re) => ({ id, re });
+const ASSIGN_KW = '(?:password|passwd|pwd|pw|pass|secret(?:[ _-]?key)?|token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key|access[_-]?key|account[_-]?key|session[_-]?id|sessionid|credential)s?';
 // Lab-written, heuristic detectors: they catch the common shapes, plain-language passwords and keys of 20 characters or more. Not every secret has a
 // recognisable shape (a short random password with no keyword before it is not found), and the page says so.
 export const DETECTORS = [
@@ -21,7 +22,9 @@ export const DETECTORS = [
   D('token-word', /\btoken\s+(?=[A-Za-z0-9._~+/=-]*\d)[A-Za-z0-9._~+/=-]{12,}/gi),
   // a passphrase is several words: take the next four
   D('passphrase', /\bpassphrase\s*(?:[:=]|\bis\b)\s*\S+(?:[ \t]+\S+){0,3}/gi),
-  D('assignment', /\b(?:password|passwd|pwd|pw|pass|secret(?:[ _-]?key)?|token|api[_-]?key|apikey|client[_-]?secret|private[_-]?key|access[_-]?key|account[_-]?key|session[_-]?id|sessionid|credential)s?\s*(?:[:=]|\bis\b)\s*\S{3,}/gi),
+  // The value stops before a second keyword with its own : or = (in minified JSON `"pw: x","pw: x"` has no space, so one greedy run would swallow the
+  // second keyword and leave ITS value showing). Each keyword then gets its own span.
+  D('assignment', new RegExp(`\\b${ASSIGN_KW}\\s*(?:[:=]|\\bis\\b)\\s*(?:(?!\\b${ASSIGN_KW}\\s*[:=])\\S){3,}`, 'gi')),
   // A long run of key characters. Two detectors, both checked in code rather than with a look-ahead (to stay linear): a run of 20 or more of
   // letters, digits, _ and - that has both a letter and a digit (or is 32 or more and is not just lowercase words joined by hyphens), and a run of 32 or
   // more that also uses + / = (base64) unless it is a lowercase path such as a URL path.

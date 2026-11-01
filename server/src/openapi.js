@@ -3,8 +3,8 @@
 // no eval, no remote or file $ref (refused), no YAML (refused), no regular expression taken from the spec, no key that could reach Object.prototype.
 // The tool NAMING rule (operationId, a documented fallback, a suffix on collision) is the lab's own: the deck does not state one.
 import { refuse } from './errors.js';
-import { cleanFree } from './credentials.js';
-import { credentialShaped, isObj } from './util.js';
+import { cleanFree, decodePercent, findCredentials, stripInvisible } from './credentials.js';
+import { isObj } from './util.js';
 import { MOCK_BACKEND_ITEMS } from './world.js';
 
 export const LIMITS = { expandNodes: 1500, expandTotal: 20000, chars: 40000, depth: 40, nodes: 20000, paths: 100, operations: 60, params: 25, refDepth: 12, schemaChars: 8000, argsChars: 8000, enumItems: 50 };
@@ -96,7 +96,15 @@ function expand(root, node, stack, depth) {
   return out;
 }
 
-const safePropName = (k) => { const s = String(k).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64) || 'arg'; return credentialShaped(s) ? `arg_${s.length}` : s; };
+// A name taken from the specification is judged on its RAW text (invisible characters deleted, NFKC, percent-decoded), BEFORE it is turned into an identifier:
+// sanitising first would turn "password: hunter2" into "password__hunter2", which no detector matches (review finding).
+export function leaky(raw) {
+  const t = stripInvisible(String(raw).slice(0, 2000));
+  return findCredentials(t).length > 0 || findCredentials(decodePercent(t)).length > 0;
+}
+// A parameter, header or scheme name that looks like a credential is refused whole: it would be stored and shown as a name.
+const clean = (raw) => { if (leaky(raw)) throw refuse('credential_in_spec', 'a name in the specification is shaped like a secret, so the lab refuses the document (masking is a heuristic, write plain names)'); return raw; };
+const safePropName = (k) => { if (leaky(k)) return `arg_${String(k).length}`; return String(k).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64) || 'arg'; };
 
 const slug = (path) => path.split('/').filter(Boolean).map((s) => (/^\{.*\}$/.test(s) ? `by_${s.slice(1, -1)}` : s)).join('_').replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'root';
 
@@ -105,8 +113,8 @@ const slug = (path) => path.split('/').filter(Boolean).map((s) => (/^\{.*\}$/.te
 function toolName(op, method, path, used) {
   let name = typeof op.operationId === 'string' ? op.operationId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 56) : '';
   let rule = 'operationId';
-  if (!name || credentialShaped(name)) { name = `${method}_${slug(cleanFree(path, 120))}`.slice(0, 56); rule = 'fallback'; }
-  if (credentialShaped(name)) { name = `${method}_operation`; rule = 'fallback'; }
+  if (!name || leaky(op.operationId)) { name = `${method}_${slug(cleanFree(path, 120))}`.slice(0, 56); rule = 'fallback'; }
+  if (leaky(name)) { name = `${method}_operation`; rule = 'fallback'; }
   if (/^(\d|__|-)/.test(name)) name = `op_${name}`;
   let final = name; let i = 2;
   while (used.has(final)) { final = `${name}_${i++}`; if (!rule.endsWith('+suffix')) rule = `${rule}+suffix`; }
@@ -132,7 +140,7 @@ export function generateTools(spec) {
       if (tools.length >= LIMITS.operations) throw refuse('too_many_operations', `the specification has more than ${LIMITS.operations} operations: the lab refuses it whole rather than dropping some`, 413);
       const { name, rule } = toolName(op, method, path, used);
       const merged = new Map();
-      for (const { p } of [...params(item.parameters), ...params(op.parameters)]) if (typeof p.name === 'string' && typeof p.in === 'string') merged.set(`${p.in}:${p.name}`, p);
+      for (const { p } of [...params(item.parameters), ...params(op.parameters)]) if (typeof p.name === 'string' && typeof p.in === 'string') merged.set(`${p.in}:${clean(p.name)}`, p);
       if (merged.size > LIMITS.params) throw refuse('too_many_parameters', `an operation has more than ${LIMITS.params} parameters`, 413);
       budget.tool = LIMITS.expandNodes;
       const properties = {}; const required = []; const pathParams = []; const queryParams = []; const argNames = new Set(['body']);
@@ -168,7 +176,7 @@ export function generateTools(spec) {
   for (const k of Object.keys(schemes).slice(0, 10)) {
     const s = schemes[k]; if (!isObj(s)) continue;
     const label = safePropName(k);
-    if (s.type === 'apiKey' && s.in === 'header' && typeof s.name === 'string' && HEADER_NAME.test(s.name)) auth.push({ scheme: label, handled: 'header', header: s.name });
+    if (s.type === 'apiKey' && s.in === 'header' && typeof s.name === 'string' && HEADER_NAME.test(clean(s.name))) auth.push({ scheme: label, handled: 'header', header: s.name });
     else if (s.type === 'http' && /^(bearer|basic)$/i.test(String(s.scheme))) auth.push({ scheme: label, handled: 'header', header: 'Authorization' });
     else if (s.type === 'oauth2' || s.type === 'openIdConnect') auth.push({ scheme: label, handled: 'agent', why: 'a login flow: the calling agent\'s responsibility, by design (deck claim)' });
     else auth.push({ scheme: label, handled: 'agent', why: 'not a header: not injected by the gateway' });

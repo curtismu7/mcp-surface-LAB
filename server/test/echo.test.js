@@ -119,6 +119,32 @@ test('a credential in an OpenAPI document (a name, an operationId, a summary, a 
   }, { workspaces: createWorkspaces({ max: 1000 }) });
 });
 
+// Review finding: the names INSIDE a specification (an apiKey header name, an operationId, a parameter, a property, a required entry, a scheme key) were turned into
+// identifiers BEFORE they were checked, so "password: hunter2" became "password__hunter2" and a 32-character header name was stored and shown as typed.
+test('a credential typed as a NAME inside an OpenAPI document (header name, operationId, parameter, property, required entry, scheme key) is refused or masked: answers and live state', async () => {
+  const positions = {
+    headerName: (v) => ({ components: { securitySchemes: { k: { type: 'apiKey', in: 'header', name: v } } }, paths: { '/items': { get: { operationId: 'listAll' } } } }),
+    schemeKey: (v) => ({ components: { securitySchemes: { [v]: { type: 'http', scheme: 'bearer' } } }, paths: { '/items': { get: { operationId: 'listAll' } } } }),
+    operationId: (v) => ({ paths: { '/items': { get: { operationId: v } } } }),
+    queryParam: (v) => ({ paths: { '/items': { get: { operationId: 'listAll', parameters: [{ name: v, in: 'query' }] } } } }),
+    pathParam: (v) => ({ paths: { [`/items/{${v}}`]: { get: { operationId: 'getOne', parameters: [{ name: v, in: 'path', required: true }] } } } }),
+    propertyAndRequired: (v) => ({ paths: { '/items': { post: { operationId: 'make', requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { [v]: { type: 'string' } }, required: [v] } } } } } } } }),
+  };
+  const shapes = NEEDLES.filter((x) => (SHAPES.includes(x.k) || ['pwColon', 'passEq', 'hex', 'key31', 'tokenWord'].includes(x.k)) && x.k !== 'filler' && x.k !== 'pem' && x.raw.length < 200);
+  shapes.push({ k: 'hex40', raw: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', probe: 'a1b2c3d4e5f6' }, { k: 'pwHunter', raw: ['password', ': hunter2'].join(''), probe: 'hunter2' });
+  await withServer(async (url) => {
+    for (const nd of shapes) for (const [pos, build] of Object.entries(positions)) {
+      const doc = JSON.stringify({ openapi: '3.0.3', info: { title: 'T', version: '1' }, ...build(nd.raw) });
+      const ws = `nm-${nd.k}-${pos}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 30);
+      for (const op of ['oaPreview', 'oaDeploy']) {
+        const r = await act(url, op, op === 'oaPreview' ? { spec: doc } : { actor: C.castAdmin, name: 'invoices', spec: doc }, ws);
+        assert.ok(!strip(JSON.stringify(r.body)).includes(nd.probe), `${nd.k} ${pos} ${op}: ${JSON.stringify(r.body).slice(0, 200)}`);
+      }
+      assert.ok(!strip(await (await get(url, '/api/state?mode=live', W(ws))).text()).includes(nd.probe), `${nd.k} ${pos}: state`);
+    }
+  }, { workspaces: createWorkspaces({ max: 1000 }) });
+});
+
 test('field names are not echoed either: an unknown key that is itself a credential never comes back, from any action', async () => {
   await withServer(async (url) => {
     for (const nd of NEEDLES.filter((x) => SHAPES.includes(x.k))) for (const op of ['mcp', 'setPolicy', 'propose', 'oauthToken', 'oaDeploy', 'cimdSet']) {
