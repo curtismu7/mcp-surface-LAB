@@ -231,3 +231,13 @@ test('the vertical packs all behave the same (names differ, structure does not)'
   }
   assert.ok(C.castApp1);
 });
+
+test('the lab clock stops 90 days after it started: 90 full days are allowed, the next minute is a 409 clock_limit that changes nothing (review: no test proved the cap)', () => {
+  const e = newEngine();
+  for (let i = 0; i < 90; i++) ok(run(e, 'advance', { minutes: 1440 }));
+  const before = JSON.stringify([e.snapshot().now, e.snapshot().audit.total ?? e.snapshot().audit.shown.length]);
+  const r = run(e, 'advance', { minutes: 1 });
+  assert.equal(r.ok, false); assert.equal(r.code, 'clock_limit'); assert.equal(r.status, 409);
+  assert.equal(JSON.stringify([e.snapshot().now, e.snapshot().audit.total ?? e.snapshot().audit.shown.length]), before, 'the refusal moved neither the clock nor the audit log');
+  assert.equal(run(e, 'advance', { minutes: 1440 }).code, 'clock_limit');
+});

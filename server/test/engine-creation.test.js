@@ -175,3 +175,16 @@ test('X (a contractor) cannot use anything the policy does not name, and an unkn
   assert.equal(codeOf(callTool(e, X, APP(A1), 'search', { query: 'q' })), 'access_denied');
   for (const u of ['nobody', '__proto__', 5, null, undefined]) assert.ok(['unknown_user', 'missing_field'].includes(codeOf(callTool(e, u, APP(A1), 'search', { query: 'q' }))) || codeOf(callTool(e, u, APP(A1), 'search', { query: 'q' })) === 'unknown_user');
 });
+
+test('amend applies the same pending-name rule as propose: a name another pending proposal holds is refused (409) and nothing changes; your own name, or a closed proposal\'s name, is fine (review fix)', () => {
+  const e = newEngine();
+  ok(propose(e, { name: 'alpha' })); ok(propose(e, { actor: U2, name: 'beta' }));
+  const before = JSON.stringify(prop(e, 'prop-0002'));
+  const r = run(e, 'amend', { actor: U2, proposalId: 'prop-0002', name: 'alpha', note: 'changed my mind' });
+  assert.equal(codeOf(r), 'duplicate_proposal'); assert.equal(r.status, 409);
+  assert.equal(JSON.stringify(prop(e, 'prop-0002')), before, 'a refused amend changes nothing: not the name, the note nor the revision');
+  assert.deepEqual(e.snapshot().creation.proposals.filter((p) => p.state === 'pending').map((p) => p.name).sort(), ['alpha', 'beta']);
+  assert.equal(ok(run(e, 'amend', { actor: U2, proposalId: 'prop-0002', name: 'beta', note: 'same name again' })).revision, 2, 'keeping your own name is not a clash');
+  ok(run(e, 'decide', { actor: A2, proposalId: 'prop-0001', decision: 'deny', revision: 1 }));
+  assert.equal(ok(run(e, 'amend', { actor: U2, proposalId: 'prop-0002', name: 'alpha' })).name, 'alpha', 'a denied proposal no longer holds its name');
+});

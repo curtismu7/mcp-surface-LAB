@@ -59,6 +59,8 @@ export const creationOps = {
     if (q.proposer !== who.id) { this.deny('not_the_proposer', { actor: who.id }); throw refuse('not_the_proposer', 'only the proposer may change a proposal', 403); }
     if (q.state !== 'pending') throw refuse('not_pending', 'the proposal is no longer pending', 409);
     const f = this.checkProposalFields(p, { requireAll: false });
+    // the same uniqueness rule as propose: two pending proposals may not carry one name (the second approval would fail with name_taken); checked before anything changes
+    if (f.name !== undefined && this.proposals.some((x) => x !== q && x.state === 'pending' && x.name === f.name)) throw refuse('duplicate_proposal', 'a pending proposal with this name exists', 409);
     if (p.note !== undefined) q.note = cleanFree(p.note, 200);
     if (!Object.keys(f).length && p.note === undefined) throw refuse('no_change', 'nothing to change', 400);
     Object.assign(q, f); q.revision++;
