@@ -139,3 +139,22 @@ test('S4: parameters the gateway does not expose and warnings beyond the 40 show
   assert.equal(w.warnings.length, 40); assert.equal(w.warnings.at(-1), '6 more warnings are not listed');
   assert.equal(gen({ '/a': { get: { operationId: 'a' } } }).warnings.length, 0);
 });
+
+test('B2: the work counter is exact: a parameter list entry, a node, an enum value, an allOf branch and a required entry are one unit each', () => {
+  const units = (paths, extra) => { generateTools(parseSpec(doc(paths, extra))); return expandedNodes(); };
+  const q = (schema) => ({ '/a': { get: { operationId: 'a', parameters: [{ name: 'k', in: 'query', schema }] } } });
+  assert.equal(units(q({ type: 'string' })), 1 + 1, 'one list entry + one schema node');
+  assert.equal(units(q({ type: 'string', enum: ['a', 'b', 'c'] })), 1 + 1 + 3, 'plus three enum values');
+  assert.equal(units(q({ allOf: [{ type: 'string' }, { type: 'string' }] })), 1 + 1 + 2 + 2, 'plus two branches (counted once as a list, once as the nodes they are)');
+  assert.equal(units(q({ type: 'object', properties: { a: { type: 'string' } }, required: ['a', 'a', 'b'] })), 1 + 1 + 1 + 3, 'one list entry, a node, a property, three required entries (duplicates are paid for, judged once)');
+  assert.equal(units({ '/a': { parameters: [{ name: 'p', in: 'query' }], get: { operationId: 'a', parameters: [{ name: 'k', in: 'query' }] }, put: { operationId: 'b' } } }), (2 + 2) + (1 + 1), 'get: two list entries and two parameter nodes; put: one entry (the path-level one) and one node');
+});
+
+test('B2: enum entries are paid for: 15 parameters of 2 properties with a 50-value enum each exceed the per-tool budget although they are few nodes and few characters', () => {
+  const nums = Array.from({ length: 50 }, (_, i) => i);
+  const schemas = { O: { type: 'object', properties: { a: { type: 'integer', enum: nums }, b: { type: 'integer', enum: nums } } } };
+  const params = (n) => Array.from({ length: n }, (_, i) => ({ name: `k${String.fromCharCode(97 + i)}`, in: 'query', schema: { $ref: '#/components/schemas/O' } }));
+  const d = (n) => doc({ '/a': { get: { operationId: 'a', parameters: params(n) } } }, { components: { schemas } });
+  assert.equal(code(() => generateTools(parseSpec(d(14)))), 'passed'); // 14 x (1 + 1 + 2 x 51) = 1456 units
+  assert.equal(code(() => generateTools(parseSpec(d(15)))), 'schema_too_large'); // 15 x 104 = 1560
+});

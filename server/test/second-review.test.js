@@ -136,3 +136,8 @@ test('S8: the pass-through diagram keeps the trust store under the backend (the 
   const nodes = Object.fromEntries(rawDiagram('passthrough-assertion').nodes.map((n) => [n.id, n]));
   assert.deepEqual([nodes.trust.x, nodes.trust.y], [nodes.be.x, 300]); assert.equal(nodes.be.x, 1500); assert.equal(nodes.gw.x, 1000);
 });
+
+test('S5: the page names an inline icon, so a browser never asks for /favicon.ico (which is a 404 now) and logs a console error', () => {
+  const html = fs.readFileSync(path.resolve(import.meta.dirname, '../../web/index.html'), 'utf8');
+  assert.match(html, /<link rel="icon" href="data:,"/);
+});
