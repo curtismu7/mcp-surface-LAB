@@ -1,0 +1,2 @@
+# Test fixtures, not secrets: a 20000-character performance test string that starts with a PEM header
+3cdbedec732d484f4b4528098275d1092cd4e629:server/test/masking.test.js:private-key:37

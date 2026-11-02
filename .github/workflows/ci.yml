@@ -76,4 +76,4 @@ jobs:
           tar -xz -f gitleaks_8.18.4_linux_x64.tar.gz gitleaks
           ./gitleaks version
       - name: Scan history
-        run: ./gitleaks detect --source . --redact --no-banner
+        run: ./gitleaks detect --source . --redact --no-banner --verbose
