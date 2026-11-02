@@ -15,10 +15,10 @@ test('every credential shape is found and masked', () => {
   assert.ok(DETECTOR_IDS.length >= 10);
 });
 
-test('cleanFree: masks, strips control and bidi characters, collapses space, caps, and never throws', () => {
+test('cleanFree: masks, turns control and bidi characters into spaces, collapses space, caps, and never throws', () => {
   const v = SECRETS.github;
   assert.ok(!cleanFree(`token ${v}`).includes(v));
-  assert.equal(cleanFree('a\u0000b\u202ec  d'), 'abc d', 'a control character and a bidi character are DELETED (a space between words stays; TAB, LF and CR are separators)');
+  assert.equal(cleanFree('a\u0000b\u202ec  d'), 'a b c d', 'a control character and a bidi override become a space (they never glue two words together); TAB, LF and CR are separators');
   assert.equal(cleanFree('one\ttwo\nthree\r\nfour\u2028five'), 'one two three four five', 'TAB, LF, CR, U+2028 stay readable as spaces');
   assert.equal(cleanFree('x'.repeat(5000)).length <= MAX_FREE, true);
   assert.equal(cleanFree(undefined), ''); assert.equal(cleanFree(null), ''); assert.equal(cleanFree({}), '[object Object]');
@@ -83,14 +83,14 @@ test('masking happens BEFORE the cut to length: a token that straddles the limit
   assert.ok(!cleanFree(`${'a'.repeat(19990)} ${v}`, 400).includes('ghp_'));
 });
 
-test('zero-width and soft-hyphen characters interleaved through a token cannot hide it: they are deleted before masking', () => {
+test('zero-width and soft-hyphen characters interleaved through a token cannot hide it: the masker reads through them', () => {
   const v = SECRETS.github;
   for (const z of ['\u200b', '\u200d', '\u2060', '\ufeff', '\u00ad', '\u202e']) {
     const out = cleanFree(`use ${[...v].join(z)} now`);
     assert.ok(!out.includes(v.slice(4, 14)), JSON.stringify(z));
     assert.match(out, /\[masked:prefix-token\]/);
   }
-  assert.equal(cleanFree('a\u200bb'), 'ab');
+  assert.equal(cleanFree('a\u200bb'), 'a\u200bb', 'a zero-width character is kept as typed: deleting it could glue letters into a word the masker had no reason to mask');
 });
 
 test('the response mask also catches the new shapes (a value that reaches a response by any path)', () => {

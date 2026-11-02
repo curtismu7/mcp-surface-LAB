@@ -1,6 +1,6 @@
 // Small shared helpers. No I/O. Everything a visitor types passes through one of these before it is used as a key, an id or text.
 import { tidy } from './credentials.js';
-import { isCredentialId, looksLikeCredential, maskDeep } from './mask.js';
+import { isCredentialId, looksLikeCredential, maskDeep, maskTyped } from './mask.js';
 
 export const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export const own = (o, k) => typeof k === 'string' && isObj(o) && Object.hasOwn(o, k);
@@ -10,13 +10,13 @@ export const nullMap = (entries = []) => Object.assign(Object.create(null), Obje
 // key count; only strings, numbers, booleans and null survive) and replace a string that is JSON text by its masked re-serialisation (see maskJsonText);
 // (2) mask the whole copy with the shared masker (values and object keys, the key name classifies the value); (3) cut strings and keys to length.
 export function scrub(value) {
-  return tidyDeep(maskDeep(bound(value, 0)), 0);
+  return tidyDeep(maskTyped(bound(value, 0)), 0);
 }
 // A JSON document typed as a string (an OpenAPI spec, a request body): masked as the document it is. The shared masker reads the same text as prose and does not
 // treat `"name": "pw hunter2xyz"` as a secret (a name field is a label there); read as an object, the value is masked.
 const maskJsonText = (s) => {
   if (s.length > 65536 || !/^\s*[{[]/.test(s)) return s;
-  try { return JSON.stringify(maskDeep(JSON.parse(s))); } catch { return s; }
+  try { return JSON.stringify(maskTyped(JSON.parse(s))); } catch { return s; }
 };
 function bound(value, depth) {
   if (typeof value === 'string') return maskJsonText(value);
