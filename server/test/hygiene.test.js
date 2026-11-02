@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import express from 'express';
 import { get, post, rawHttp, withServer, W } from './helpers.js';
+import { createApp, startHttpServer } from '../src/app.js';
 import { createWorkspaces } from '../src/workspaces.js';
 
 const GH = ['gh', 'p_', 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'].join('');
@@ -140,4 +142,26 @@ test('H6: a workspace id shaped like a credential is a 400 bad_workspace on ever
     const known = await post(url, '/api/act/advance', { mode: 'live', vertical: 'finance', params: { minutes: 1 } }, W('password-reset-demo'));
     assert.equal(known.status, 400, 'known trade-off: a lab name that STARTS with password- is refused (isCredentialId reads the prefix)');
   }, { workspaces });
+});
+
+test('H7: the response mask is the last line of defence (values AND object keys of any JSON answer), and the error handler never echoes an error message', async () => {
+  const SECRET = ['hun', 'ter2', 'xyz'].join('');
+  const router = express.Router();
+  router.get('/', (req, res, next) => {
+    if (req.query.boom === '500') return next(new Error(`failed with password=${SECRET}`));
+    if (req.query.boom === '422') return next(Object.assign(new Error(`bad ${SECRET}`), { status: 422 }));
+    return res.json({ password: SECRET, nested: { list: [{ [`token=${SECRET}`]: 1 }] }, note: `login: bob / ${SECRET}`, ordinary: 'The secret is out' });
+  });
+  const health = { router, stop() {} };
+  const { server, url } = await startHttpServer({ port: 0, host: '127.0.0.1', app: createApp({ health, workspaces: createWorkspaces(), webDist: '/nonexistent/dist' }) });
+  const base = url.replace(/\/$/, '');
+  const out = []; const realOut = process.stdout.write.bind(process.stdout); const realErr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = (c, ...a) => { out.push(String(c)); return realOut(c, ...a); }; process.stderr.write = (c, ...a) => { out.push(String(c)); return realErr(c, ...a); };
+  try {
+    const ok = await get(base, '/api/health'); const t = await ok.text();
+    assert.equal(ok.status, 200); assert.ok(!t.includes(SECRET), 'no value and no key carries the secret'); assert.equal(JSON.parse(t).ordinary, 'The secret is out');
+    const boom = await get(base, '/api/health?boom=500'); assert.equal(boom.status, 500); assert.deepEqual(await boom.json(), { error: 'internal_error' });
+    const four = await get(base, '/api/health?boom=422'); assert.equal(four.status, 422); assert.deepEqual(await four.json(), { error: 'bad_request' });
+  } finally { process.stdout.write = realOut; process.stderr.write = realErr; await new Promise((res) => server.close(res)); }
+  assert.ok(!out.join('').includes(SECRET), 'the error message was not logged');
 });
