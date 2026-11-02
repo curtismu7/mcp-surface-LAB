@@ -260,11 +260,13 @@ test('the upstream wire limit is 1,000,000 bytes: exactly that is read, one more
   assert.equal(code(() => new SseParser().push('x'.repeat(1_000_000))), 'passed'); assert.equal(code(() => new SseParser().push('x'.repeat(1_000_001))), 'response_too_large');
 });
 
-test('free text is cut at exactly 400 characters (after masking); the scan reads exactly 200,000 characters', () => {
+test('free text is cut at exactly 400 characters (after masking); the shared masker reads every character, so a token at any offset is masked', () => {
   const words = (n) => 'w '.repeat(Math.ceil(n / 2)).slice(0, n - 1) + 'w';
   assert.equal(cleanFree(words(400)).length, 400); assert.equal(cleanFree(words(400)), words(400)); assert.equal(cleanFree(words(401)).length, 400); assert.equal(cleanFree(words(401)), words(401).slice(0, 400));
-  const tokenAt = (at) => `${' '.repeat(at)}ghp_abcdef`; // a 10-character token starting at `at`
-  assert.equal(findCredentials(tokenAt(199_990)).length, 1, 'ends at 200000: read'); assert.equal(findCredentials(tokenAt(199_991)).length, 0, 'cut at 200000 after 9 characters: too short to be a token');
-  assert.equal(findCredentials(tokenAt(200_000)).length, 0);
-  assert.ok(maskResponseText(tokenAt(200_000)).includes('[masked:github-token]'), 'the response mask reads every character it sends');
+  const tokenAt = (at) => `${' '.repeat(at)}${['gh', 'p_a1B2c3D4e5F6g7H8i9J0'].join('')}`; // a prefixed token starting at `at`
+  for (const at of [0, 199_990, 200_000, 300_000]) {
+    assert.equal(findCredentials(tokenAt(at)).length, 1, `read at ${at}`);
+    assert.ok(maskResponseText(tokenAt(at)).includes('[masked:prefix-token]'), `the response mask reads every character it sends: ${at}`);
+  }
+  assert.ok(!cleanFree(tokenAt(300_000), 400).includes('a1B2c3D4'), 'masked before the cut');
 });

@@ -3,8 +3,9 @@
 // no eval, no remote or file $ref (refused), no YAML (refused), no regular expression taken from the spec, no key that could reach Object.prototype.
 // The tool NAMING rule (operationId, a documented fallback, a suffix on collision) is the lab's own: the deck does not state one.
 import { refuse } from './errors.js';
-import { cleanFree, decodePercent, findCredentials, stripInvisible } from './credentials.js';
-import { isObj } from './util.js';
+import { cleanFree } from './credentials.js';
+import { credentialShaped, isObj } from './util.js';
+import { isCredentialId } from './mask.js';
 import { MOCK_BACKEND_ITEMS } from './world.js';
 
 export const LIMITS = { expandNodes: 1500, expandTotal: 20000, chars: 40000, depth: 40, nodes: 20000, paths: 100, operations: 60, params: 25, refDepth: 12, schemaChars: 8000, argsChars: 8000, enumItems: 50, requiredItems: 60, allOfBranches: 10, paramEntries: 80, securitySchemes: 10 };
@@ -112,10 +113,10 @@ function expand(root, node, stack, depth) {
 // sanitising first would turn "password: hunter2" into "password__hunter2", which no detector matches (review finding).
 const verdicts = new Map(); // text -> verdict, so a name repeated across operations and parameters is judged once (cleared per document and when large)
 export function leaky(raw) {
-  const t = stripInvisible(String(raw).slice(0, 2000));
+  const t = String(raw).slice(0, 2000);
   if (verdicts.has(t)) return verdicts.get(t);
   if (verdicts.size > 5000) verdicts.clear();
-  const v = findCredentials(t).length > 0 || findCredentials(stripInvisible(decodePercent(t))).length > 0;
+  const v = credentialShaped(t) || isCredentialId(t); // a name becomes an identifier, so it is also judged as an id (a long run with a digit, an sk-/pw-/token- prefix)
   verdicts.set(t, v);
   return v;
 }

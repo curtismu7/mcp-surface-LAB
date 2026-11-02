@@ -8,7 +8,7 @@ import { buildStory, rawStory } from './story.js';
 import { Engine } from './engine.js';
 import { EXPECTED, PKCE_CHALLENGE, PKCE_VERIFIER, buildMockTable, runScenario, scenarioList } from './scenarios.js';
 import { findCredentials } from './credentials.js';
-import { maskDeep } from './mask.js';
+import { maskStory } from './mask.js';
 import { modeFrom } from './config.js';
 import { DIAGRAM_NAMES, buildDiagram } from './diagramData.js';
 import { MOCK_TABLE } from './mockTable.js';
@@ -83,12 +83,14 @@ export async function runChecks({ env = process.env, table = MOCK_TABLE } = {}) 
   const hosts = scanHosts(filled);
   add('story-hosts', hosts.length ? 'fail' : 'pass', hosts.length ? `non-reserved hosts: ${hosts.join(', ')}` : 'every host in the story data and the Mock table is .invalid or .example');
   // The credential detectors read TEXT: they are run on each string value, not on the JSON dump (in a dump, `"tokens":120` is a JSON key and a number, not an assignment).
-  const leaves = []; const todo = [JSON.parse(filled)];
+  const parsedStories = JSON.parse(filled);
+  for (const st of parsedStories.slice(0, -1)) { delete st.pkce; delete st.sampleSpec; } // public by design: the RFC 7636 appendix B example pair, and the sample OpenAPI document (an apiKey scheme, no key)
+  const leaves = []; const todo = [parsedStories];
   while (todo.length) { const x = todo.pop(); if (typeof x === 'string') leaves.push(x); else if (x && typeof x === 'object') todo.push(...Object.values(x)); }
-  const keys = scanKeys(filled); const creds = leaves.flatMap((t) => findCredentials(t)).filter((x) => x.id !== 'key-like' && x.id !== 'long-blob');
+  const keys = scanKeys(filled); const creds = leaves.flatMap((t) => findCredentials(t));
   add('story-keys', keys.length || creds.length ? 'fail' : 'pass', keys.length || creds.length ? 'credential-shaped text in the story data' : 'no credential-shaped value anywhere in the story data or the Mock table');
   const story = buildStory(VERTICALS.finance, 'finance');
-  add('masking', JSON.stringify(maskDeep(story)) === JSON.stringify(story) ? 'pass' : 'fail', 'the response mask leaves the story untouched (it only changes credential-shaped values)');
+  add('masking', JSON.stringify(maskStory(story)) === JSON.stringify(story) ? 'pass' : 'fail', 'the response mask leaves the story untouched (it only changes credential-shaped values)');
   add('diagrams', DIAGRAM_NAMES.every((n) => buildDiagram(VERTICALS.finance, n).steps.length > 0) ? 'pass' : 'fail', `${DIAGRAM_NAMES.length} diagram-studio/1 diagrams load and validate`);
 
   const ng = await netguardSelfTest();

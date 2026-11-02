@@ -90,7 +90,7 @@ test('B1: the stored fields show the mask: a proposal note, a DCR client name an
     assert.equal(n2.body.result.note, '[masked:assignment]');
     const dcr = await act(url, 'oauthRegister', { clientName: 'my\u0001 password is X1234567', redirectUris: [`https://agent.${C.castHost}.example/cb`] }, 'repro-b1');
     assert.ok(!JSON.stringify(dcr.body).includes('X1234567'));
-    assert.deepEqual(dcr.body.state.oauth.clients.map((x) => x.name), ['my [masked:assignment]']);
+    assert.deepEqual(dcr.body.state.oauth.clients.map((x) => x.name), ['my [masked:phrase]']);
     await act(url, 'setSessionLogging', { actor: C.castAdmin, enabled: true }, 'repro-b1');
     const call = await act(url, 'mcp', { user: C.castUser, target: { kind: 'app', id: C.castApp1 }, rpc: { method: 'tools/call', params: { name: 'search', arguments: { query: 'p\u0001assword: hunter2xyz' } } } }, 'repro-b1');
     assert.equal(call.status, 200);
@@ -133,9 +133,9 @@ test('S1: ordinary sentences stay readable (the false-positive guard)', () => {
 test('S1: the review repro surfaces (propose note, DCR clientName, OpenAPI operationId, parameter name) mask or refuse the keyword + space form', async () => {
   await withServer(async (url) => {
     const n = await act(url, 'propose', { actor: C.castUser, kind: 'mcp', name: 'helpdesk', backend: `https://helpdesk.${C.castHost}.example/mcp`, authMode: 'none', note: 'password hunter2xyz' }, 'repro-s1');
-    assert.equal(n.body.result.note, '[masked:keyword-space]');
+    assert.equal(n.body.result.note, '[masked:shape]');
     const d = await act(url, 'oauthRegister', { clientName: 'password hunter2xyz', redirectUris: [`https://agent.${C.castHost}.example/cb`] }, 'repro-s1');
-    assert.deepEqual(d.body.state.oauth.clients.map((x) => x.name), ['[masked:keyword-space]']);
+    assert.deepEqual(d.body.state.oauth.clients.map((x) => x.name), ['[masked:shape]']);
     const spec = (op, param) => JSON.stringify({ openapi: '3.0.3', info: { title: 't', version: '1' }, paths: { '/a': { get: { operationId: op, parameters: param ? [{ name: param, in: 'query', schema: { type: 'string' } }] : [] } } } });
     const o = await act(url, 'oaPreview', { spec: spec('password hunter2xyz') }, 'repro-s1', { mode: 'mock' });
     assert.equal(o.status, 200); assert.ok(!JSON.stringify(o.body).includes('hunter2xyz'), 'the tool name is not password_hunter2xyz'); assert.equal(o.body.result.tools[0].name, 'get_a');
@@ -153,7 +153,7 @@ test('S2: user:password@host without a scheme is masked, with or without leading
     assert.ok(!out.includes('hunter2xyz') && !out.includes('w0rd'), `${t} -> ${out}`);
     assert.ok(!maskResponseText(t).includes('hunter2xyz') && !maskResponseText(t).includes('w0rd'), `the response mask: ${t}`);
   }
-  assert.equal(cleanFree('admin:hunter2xyz@db.example'), '[masked:userinfo-bare]db.example', 'only the login is replaced, the host stays');
+  assert.equal(cleanFree('admin:hunter2xyz@db.example'), '[masked:userinfo]db.example', 'only the login is replaced, the host stays');
   for (const t of ['maya.chen@fabrikam.example', 'mailto:maya.chen@fabrikam.example', 'contact maya.chen@fabrikam.example or lee.park@fabrikam.example', 'Re: status', 'ratio 3:4 at 5pm', 'time 12:30 @ the office', 'ledger:read']) assert.equal(cleanFree(t), t, t);
 });
 

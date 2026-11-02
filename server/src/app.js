@@ -17,7 +17,7 @@ import { createWorkspaces, workspaceFrom } from './workspaces.js';
 import { Engine } from './engine.js';
 import { isOp, isPure } from './actions.js';
 import { liveState, mockState, runAction } from './service.js';
-import { maskDeep } from './mask.js';
+import { maskDeep, maskStory } from './mask.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
@@ -48,7 +48,7 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
   api.use((req, res, next) => { const m = /charset\s*=\s*"?([^;"\s]+)/i.exec(String(req.headers['content-type'] || '')); if (m && !/^utf-?8$/i.test(m[1])) return res.status(415).json({ error: 'unsupported_charset' }); return next(); });
   api.use(express.json({ limit: '64kb' }));
   // Defence in depth: every JSON answer is masked for credential-shaped values, whatever path produced it.
-  api.use((_req, res, next) => { const send = res.json.bind(res); res.json = (b) => send(maskDeep(b)); next(); });
+  api.use((req, res, next) => { const send = res.json.bind(res); const mask = req.path === '/story' ? maskStory : maskDeep; res.json = (b) => send(mask(b)); next(); });
   api.use('/health', health.router);
   const verticalOf = (req) => verticalFrom(req.body?.vertical ?? req.query.vertical);
   const castFor = (req) => loadCast(configFile, verticalOf(req));
