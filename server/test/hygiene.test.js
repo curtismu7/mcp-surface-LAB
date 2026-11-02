@@ -13,7 +13,7 @@ const HEX = 'a3f9c2e17b4d58a6f0c1e9d27b3a45c8e6f1d097';
 const JSONHDR = { 'content-type': 'application/json' };
 
 async function withDist(fn, opts = {}) {
-  const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'msf-hyg-')); fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>PAGE</title>');
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'msf-hyg-')); fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>PAGE</title>'); fs.mkdirSync(path.join(dist, 'assets')); fs.writeFileSync(path.join(dist, 'assets', 'app.js'), 'export {};');
   try { await withServer(fn, { webDist: dist, ...opts }); } finally { fs.rmSync(dist, { recursive: true, force: true }); }
 }
 const host = (url) => new URL(url).host;
@@ -35,17 +35,22 @@ test('H1: the final 404 and the error handler answer fixed JSON that never carri
   });
 });
 
-test('H2: POST, PUT, DELETE and PATCH on / and on any page address are a 404 JSON, never a 405 and never the page', async () => {
+test('H2: POST, PUT, DELETE and PATCH on / are a 405 with Allow: GET, HEAD (fixed JSON, never the page); on any other path they are a 404; with no web build / is a 404', async () => {
   await withDist(async (url) => {
-    for (const p of ['/', '/openapi', '/some/deep/route']) {
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+      const r = await rawHttp(`${url}/`, { method, headers: { host: host(url), origin: url } });
+      assert.equal(r.status, 405, `${method} /`); assert.deepEqual(JSON.parse(r.text), { error: 'method_not_allowed' }); assert.equal(r.headers.allow, 'GET, HEAD');
+    }
+    for (const method of ['GET', 'HEAD']) assert.equal((await rawHttp(`${url}/`, { method, headers: { host: host(url) } })).status, 200, method);
+    for (const p of ['/openapi', '/some/deep/route']) {
       for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
         const r = await rawHttp(`${url}${p}`, { method, headers: { host: host(url), origin: url } });
         assert.equal(r.status, 404, `${method} ${p}`); assert.deepEqual(JSON.parse(r.text), { error: 'not_found' }, `${method} ${p}`); assert.equal(r.headers.allow, undefined);
       }
     }
   });
-  await withServer(async (url) => { // no web build at all
-    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) { const r = await rawHttp(`${url}/`, { method, headers: { host: host(url), origin: url } }); assert.equal(r.status, 404, method); assert.deepEqual(JSON.parse(r.text), { error: 'not_found' }); }
+  await withServer(async (url) => { // no web build at all: "/" is not a route
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) { const r = await rawHttp(`${url}/`, { method, headers: { host: host(url), origin: url } }); assert.equal(r.status, 404, method); assert.deepEqual(JSON.parse(r.text), { error: 'not_found' }); assert.equal(r.headers.allow, undefined); }
   });
 });
 
@@ -100,6 +105,9 @@ test('H5: the page shell is served for page addresses only: /assets, /assets/, /
         if (method === 'GET') assert.deepEqual(JSON.parse(r.text), { error: 'not_found' }, p);
       }
     }
+    const real = await rawHttp(`${url}/assets/app.js`, { headers: { host: host(url) } });
+    assert.equal(real.status, 200); assert.match(String(real.headers['content-type']), /javascript/); assert.equal(real.text, 'export {};');
+    for (const p of ['/assets', '/assets/']) { const d = await rawHttp(`${url}${p}`, { headers: { host: host(url) } }); assert.equal(d.status, 404, p); assert.equal(d.headers.location, undefined, `${p}: a directory is never redirected (a Location header would echo the path)`); }
     for (const p of ['/', '/openapi', '/some/deep/route/', '/UPPER']) {
       for (const method of ['GET', 'HEAD']) { const r = await rawHttp(`${url}${p}`, { method, headers: { host: host(url) } }); assert.equal(r.status, 200, `${method} ${p}`); assert.match(String(r.headers['content-type']), /text\/html/); }
     }

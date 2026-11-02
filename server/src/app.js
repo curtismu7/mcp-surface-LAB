@@ -30,7 +30,9 @@ export { isPageAddress };
 
 // One route table: the 405 answers (with Allow) are built from it, and nothing else. ":op" matches one segment; HEAD is added wherever GET is.
 const ROUTES = { '/api/health': ['GET'], '/api/state': ['GET'], '/api/story': ['GET'], '/api/diagram': ['GET'], '/api/info': ['GET'], '/api/act/:op': ['POST'], '/api/reset': ['POST'] };
+// The page itself ("/") is a route too, but only when a web build is served (see createApp): the wrong method on it is a 405 with Allow, not a 404.
 const METHODS = buildMethodTable(ROUTES);
+const PAGE_METHODS = buildMethodTable({ ...ROUTES, '/': ['GET'] });
 // A fixed-code answer. Nothing the visitor sent is ever put into the code or the body.
 const fail = (res, status, code, headers = {}) => res.set(headers).status(status).json({ error: code });
 const actName = (p) => { try { return decodeURIComponent(p.split('/')[2] ?? ''); } catch { return ''; } }; // /act/<name> -> name
@@ -49,6 +51,13 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
   // Only UTF-8 bodies: a body declared utf-7 or another charset would be decoded into replacement characters that split a secret. charsetProblem returns a
   // fixed code and never the value, so the 415 answers (and logs) nothing the visitor typed. Before every route, not only /api.
   app.use((req, res, next) => (charsetProblem(req.headers['content-type']) ? fail(res, 415, 'unsupported_charset') : next()));
+
+  const shell = fs.existsSync(path.join(webDist, 'index.html'));
+  // POST, PUT, DELETE and PATCH on the page ("/") are a 405 with Allow: GET, HEAD (fixed JSON). Without a web build "/" is not a route: the 404 below.
+  app.use((req, res, next) => {
+    const miss = shell && req.path === '/' ? methodNotAllowed(PAGE_METHODS, req.method, '/') : null;
+    return miss ? fail(res, 405, 'method_not_allowed', { Allow: miss.allow.join(', ') }) : next();
+  });
 
   const api = express.Router();
   // A known route with the wrong method is a 405 with Allow (fixed JSON, nothing echoed). An unknown action name under /act is not a known route: it falls through to the 404.
@@ -122,7 +131,7 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
   api.use((_req, res) => fail(res, 404, 'not_found'));
   app.use('/api', api);
 
-  if (fs.existsSync(path.join(webDist, 'index.html'))) {
+  if (shell) {
     app.use(express.static(webDist, { index: false, dotfiles: 'ignore', fallthrough: true, redirect: false })); // real files only: no directory index or redirect (a Location header would echo the path)
     // The page is served for a page address only: no dot-file or dot segment, and no file extension in the last segment. A missing file with an extension
     // (/favicon.ico, /x.js, /missing.css) is a 404, not the page (a script or a stylesheet that "loads" HTML hides the real problem). GET and HEAD both.
