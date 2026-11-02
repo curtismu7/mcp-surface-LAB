@@ -4,7 +4,7 @@
       "id": "mcp-surface-lab",
       "name": "MCP Surface LAB",
       "kind": "Demo",
-      "description": "The MCP gateway in front of every MCP server: an aggregate whose own policy caps its members (enforced twice), entitlement-aware discovery filtered in flight (JSON, streams, gzip), OpenAPI to MCP that runs for real locally, five backend credential modes including token pass-through with real RS256, a catalog of verified servers, OAuth 2.1 with PKCE and CIMD, and approval-gated creation: a simulation of the 2026-11-02 Ping release claims (slides 36 to 39). Mock tables, or a Live local engine. Every product claim is UNVERIFIED on our tenant.",
+      "description": "The MCP gateway in front of every MCP server: aggregate policy caps, entitlement-aware discovery, OpenAPI to MCP, five backend credential modes, a verified-server catalog, OAuth 2.1 with PKCE and CIMD, approval-gated creation. Simulates the 2026-11-02 release claims. Mock or Live. UNVERIFIED.",
       "url": "http://localhost:7350",
       "healthPath": "/api/health",
       "composeFile": "mcp-surface-LAB/docker-compose.yml",
