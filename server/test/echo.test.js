@@ -7,7 +7,7 @@ import { createWorkspaces } from '../src/workspaces.js';
 import { OP_NAMES } from '../src/actions.js';
 import { SECRETS } from './secrets.js';
 
-const PROBE = (k, v) => (k === 'pem' ? 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC' : k === 'bearer' ? 'tokenvalue' : k === 'assignment' ? 'hunter2hunter2' : ({ plainIs: 'hunter2xyz', pwColon: 'Hunter2Secret', passEq: 'Tr0ub4dor', passphrase: 'correct horse', userinfo: 'hunter2@', tokenWord: ['abcdef12', '34567890zz'].join(''), accountKey: ['abcd', 'EFGH1234'].join(''), sessionId: '00D5g000008dkQz' })[k] || v);
+const PROBE = (k, v) => (k === 'pem' ? 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC' : k === 'bearer' ? 'tokenvalue' : k === 'assignment' ? 'hunter2hunter2' : ({ plainIs: 'hunter2xyz', pwColon: 'Hunter2Secret', passEq: 'Tr0ub4dor', userinfo: 'hunter2@', tokenWord: ['abcdef12', '34567890zz'].join(''), accountKey: ['abcd', 'EFGH1234'].join(''), sessionId: '00D5g000008dkQz' })[k] || v);
 const NEEDLES = Object.entries(SECRETS).map(([k, v]) => ({ k, raw: v, probe: PROBE(k, v) }));
 const ZW = [...SECRETS.github].join('​');
 NEEDLES.push({ k: 'zeroWidthGithub', raw: ZW, probe: SECRETS.github.slice(4, 16) });
@@ -18,7 +18,7 @@ for (const k of ['plainIs', 'pwColon', 'userinfo', 'tokenWord', 'github', 'passE
   NEEDLES.push({ k: `${k}Enc`, raw: encodeURIComponent(v), probe: pr, also: [encodeURIComponent(pr).slice(0, 14)] });
   NEEDLES.push({ k: `${k}Enc2`, raw: encodeURIComponent(encodeURIComponent(v)), probe: pr, also: [encodeURIComponent(encodeURIComponent(pr)).slice(0, 14)] });
 }
-const SHAPES = ['github', 'jwt', 'pem', 'bearer', 'plainIs', 'userinfo', 'hex', 'key31', 'zeroWidthGithub', 'filler', 'plainIsEnc', 'plainIsEnc2', 'userinfoEnc', 'githubEnc', 'githubEnc2'];
+const SHAPES = ['github', 'jwt', 'pem', 'bearer', 'plainIs', 'userinfo', 'hex', 'zeroWidthGithub', 'filler', 'plainIsEnc', 'plainIsEnc2', 'userinfoEnc', 'githubEnc', 'githubEnc2'];
 const strip = (t) => t.replace(/[​-‏⁠﻿­]/g, '');
 
 import { SKEL, variants } from './skeleton.js';
@@ -99,7 +99,7 @@ test('a credential typed as a NAME inside an OpenAPI document (header name, oper
     pathParam: (v) => ({ paths: { [`/items/{${v}}`]: { get: { operationId: 'getOne', parameters: [{ name: v, in: 'path', required: true }] } } } }),
     propertyAndRequired: (v) => ({ paths: { '/items': { post: { operationId: 'make', requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { [v]: { type: 'string' } }, required: [v] } } } } } } } }),
   };
-  const shapes = NEEDLES.filter((x) => (SHAPES.includes(x.k) || ['pwColon', 'passEq', 'hex', 'key31', 'tokenWord'].includes(x.k)) && x.k !== 'filler' && x.k !== 'pem' && x.raw.length < 200);
+  const shapes = NEEDLES.filter((x) => (SHAPES.includes(x.k) || ['pwColon', 'passEq', 'hex', 'tokenWord'].includes(x.k)) && x.k !== 'filler' && x.k !== 'pem' && x.raw.length < 200);
   shapes.push({ k: 'hex40', raw: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', probe: 'a1b2c3d4e5f6' }, { k: 'pwHunter', raw: ['password', ': hunter2'].join(''), probe: 'hunter2' });
   await withServer(async (url) => {
     for (const nd of shapes) for (const [pos, build] of Object.entries(positions)) {

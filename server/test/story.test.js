@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { DEFAULT_CAST, VERTICALS } from '../src/cast.js';
 import { buildStory, renderTalkTrackMarkdown } from '../src/story.js';
 import { BANNER, CLAIMS, CLAIM_LABEL, DISCREPANCIES, FIELD_SOURCES, TALK_TRACK, WHY, SOURCE_NAMES } from '../src/data.js';
-import { maskDeep } from '../src/mask.js';
+import { maskStory } from '../src/mask.js';
 import { DIAGRAM_NAMES, buildDiagram, loadDiagram, rawDiagram } from '../src/diagramData.js';
 import { validateDiagram } from '../src/diagramStudioValidate.js';
 import { maskResponseText } from '../src/mask.js';
@@ -53,7 +53,7 @@ test('docs/talk-track.md is exactly what the generator makes (no drift)', () => 
 });
 
 test('the response mask leaves every vertical\'s story untouched, and no fixed message in the source is altered by it (a "token is ..." sentence would be masked)', () => {
-  for (const [v, c] of Object.entries(VERTICALS)) { const s = buildStory(c, v); assert.deepEqual(maskDeep(s), s, v); }
+  for (const [v, c] of Object.entries(VERTICALS)) { const s = buildStory(c, v); assert.deepEqual(maskStory(s), s, v); }
   const dir = new URL('../src/', import.meta.url); const bad = [];
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
     const code = fs.readFileSync(new URL(f, dir), 'utf8');

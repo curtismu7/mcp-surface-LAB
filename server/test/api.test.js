@@ -168,7 +168,7 @@ test('the diagram endpoint serves the three diagram-studio/1 diagrams by name, r
 test('request-shape statuses: a known route with the wrong method is 405, a non-JSON body is 415, an unknown vertical is 400; none echoes the input (review fix)', async () => {
   await withServer(async (url) => {
     const secretLike = ['gh', 'p_', 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'].join('');
-    for (const [method, p, allow] of [['GET', '/api/act/mcp', 'POST'], ['GET', '/api/act/advance', 'POST'], ['PUT', '/api/state', 'GET'], ['POST', '/api/state', 'GET'], ['GET', '/api/reset', 'POST'], ['DELETE', '/api/story', 'GET']]) {
+    for (const [method, p, allow] of [['GET', '/api/act/mcp', 'POST'], ['GET', '/api/act/advance', 'POST'], ['PUT', '/api/state', 'GET, HEAD'], ['POST', '/api/state', 'GET, HEAD'], ['GET', '/api/reset', 'POST'], ['DELETE', '/api/story', 'GET, HEAD']]) {
       const r = await fetch(`${url}${p}`, { method, headers: { origin: url } });
       assert.equal(r.status, 405, `${method} ${p}`); assert.equal(r.headers.get('allow'), allow); assert.deepEqual(await r.json(), { error: 'method_not_allowed' });
     }

@@ -2,7 +2,7 @@
 // and age. The browser sends its id in X-Workspace (default "default"). Reset clears the current workspace only.
 // A NEW workspace past the cap is REFUSED (503), never made by evicting someone else's: a busy lab must not erase a visitor's state.
 import { Engine } from './engine.js';
-import { findCredentials } from './credentials.js';
+import { isCredentialId } from './mask.js';
 import { refuse } from './errors.js';
 
 export const WORKSPACE_RE = /^[a-z0-9-]{1,40}$/;
@@ -12,7 +12,7 @@ export function workspaceFrom(req) {
   const raw = req.headers['x-workspace'];
   if (raw === undefined) return DEFAULT_WORKSPACE;
   // An id that looks like a credential (a 40-hex token, a long mixed run) is refused rather than echoed back in the `workspace` field and the hop headers.
-  return typeof raw === 'string' && WORKSPACE_RE.test(raw) && findCredentials(raw).length === 0 ? raw : null;
+  return typeof raw === 'string' && WORKSPACE_RE.test(raw) && !isCredentialId(raw) ? raw : null;
 }
 
 export function createWorkspaces({ max = 200, ttlMs = 60 * 60 * 1000, now = Date.now } = {}) {

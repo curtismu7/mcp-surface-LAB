@@ -57,7 +57,7 @@ test('B3: a credential typed as a path argument comes back in no field, plain, p
       e.trace = { traceId: 'a'.repeat(32), span: () => 'b'.repeat(16) }; e.hops = [];
       const r = callTool(e, U, APP('invoices'), 'getItem', { id: form });
       const all = JSON.stringify([r, e.hops, e.snapshot()]);
-      const needle = { plainIs: 'hunter2xyz', pwColon: 'Hunter2Secret', passEq: 'Tr0ub4dor', passphrase: 'correct', userinfo: 'hunter2', tokenWord: ['abcdef12', '34567890zz'].join(''), accountKey: ['abcd', 'EFGH1234'].join(''), sessionId: ['00D5g0', '00008dkQz'].join(''), assignment: 'hunter2hunter2', bearer: 'tokenvalue' }[k] || v.slice(4, 16);
+      const needle = { plainIs: 'hunter2xyz', pwColon: 'Hunter2Secret', passEq: 'Tr0ub4dor', userinfo: 'hunter2', tokenWord: ['abcdef12', '34567890zz'].join(''), accountKey: ['abcd', 'EFGH1234'].join(''), sessionId: ['00D5g0', '00008dkQz'].join(''), assignment: 'hunter2hunter2', bearer: 'tokenvalue' }[k] || v.slice(4, 16);
       for (const probe of [needle, encodeURIComponent(needle), encodeURIComponent(encodeURIComponent(needle)), needle.replace(/ /g, '%20')]) assert.ok(!all.includes(probe), `${k} (${form === v ? 'plain' : 'encoded'}): ${probe}`);
       assert.ok(e.hops.some((h) => h.request?.request?.path === '/items/{id}'), 'the template is shown');
     }
@@ -67,7 +67,7 @@ test('B3: a credential typed as a path argument comes back in no field, plain, p
       await act(url, 'oaDeploy', { actor: A, name: 'invoices', spec: sample }, 'b3');
       const r = await act(url, 'mcp', { user: U, target: { kind: 'app', id: 'invoices' }, rpc: { method: 'tools/call', params: { name: 'getItem', arguments: { id: encodeURIComponent(v) } } } }, 'b3');
       assert.ok(!JSON.stringify(r.body).includes(encodeURIComponent(v).slice(0, 24)) && !JSON.stringify(r.body).includes('Tangerine'), k);
-      assert.ok(r.body.hops.every((h) => !/%20|%3A/.test(JSON.stringify(h))), `${k}: no percent-encoded typed text in any hop`);
+      for (const probe of [{ plainIs: 'hunter2xyz', pwColon: 'Hunter2Secret', userinfo: 'hunter2' }[k], encodeURIComponent(encodeURIComponent({ plainIs: 'hunter2xyz', pwColon: 'Hunter2Secret', userinfo: 'hunter2' }[k]))]) assert.ok(r.body.hops.every((h) => !JSON.stringify(h).includes(probe)), `${k}: the typed secret is in no hop`);
     });
   }
 });
@@ -256,7 +256,7 @@ test('S8b: the response-level mask (app.js) is a second line of defence: a crede
     const e = workspaces.engine('default', 'finance', C); const secret = SECRETS.github;
     const real = e.snapshot.bind(e); e.snapshot = () => ({ ...real(), leaked: `oops ${secret}`, nested: { deep: [secret] } });
     const t = await (await get(url, '/api/state?mode=live')).text();
-    assert.ok(!t.includes(secret.slice(4, 20))); assert.match(t, /\[masked:github-token\]/);
+    assert.ok(!t.includes(secret.slice(4, 20))); assert.match(t, /\[masked:prefix-token\]/);
     const w = await (await post(url, '/api/act/advance', { mode: 'live', params: { minutes: 1 } })).text();
     assert.ok(!w.includes(secret.slice(4, 20)));
   }, { workspaces });

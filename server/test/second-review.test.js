@@ -61,8 +61,8 @@ test('S5: the web root still cannot be escaped (encoded dot segments, encoded sl
 });
 
 test('S5: isPageAddress is the one rule: no dot segment, no dot-file, no extension in the last segment, no backslash, decodable', () => {
-  for (const p of ['/', '/a', '/a/b', '/a/b.c/d', '/a/b%20c', '/a-b_c', '//']) assert.equal(isPageAddress(p), true, p);
-  for (const p of ['/a.js', '/a/b.c', '/.x', '/a/.x', '/..', '/a/..', '/a/./b', '/%2e%2e/x', '/a%2f..%2fb', '/a\\b', '/%E0%A4%A', '/a.', '/favicon.ico']) assert.equal(isPageAddress(p), false, p);
+  for (const p of ['/', '/a', '/a/b', '/a/b.c/d', '/a/b%20c', '/a-b_c']) assert.equal(isPageAddress(p), true, p);
+  for (const p of ['/a.js', '/a/b.c', '/.x', '/a/.x', '/..', '/a/..', '/a/./b', '/%2e%2e/x', '/a%2f..%2fb', '/a\\b', '/%E0%A4%A', '/a.', '/favicon.ico', '//', '/assets', '/assets/', '/api', '/%', '/%zz', '/%2541']) assert.equal(isPageAddress(p), false, p);
 });
 
 // ---- S7 ----------------------------------------------------------------------------------------------------------------------------------------

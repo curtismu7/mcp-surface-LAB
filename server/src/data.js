@@ -15,7 +15,7 @@ export const SOURCE_NAMES = { deck: 'deck claim', swagger: 'console swagger name
 
 // The deck rows (slides 36 to 39). Slide 36 carries a GA badge, as do 37, 38 and 39.
 export const CLAIMS = [
-  { id: 'oauth', claim: 'Standards-based authorization: a full OAuth 2.1 authorization server with dynamic client registration, mandatory PKCE (S256) and refresh tokens; published discovery metadata lets compliant MCP clients connect without custom configuration.', slide: 36 },
+  { id: 'oauth', claim: 'Standards-based authorization (a full OAuth 2.1 authorization server with dynamic client registration, mandatory PKCE (S256) and refresh tokens; published discovery metadata lets compliant MCP clients connect without custom configuration).', slide: 36 },
   { id: 'cimd', claim: 'CIMD client registration: the registration mechanism the MCP specification now prefers over dynamic registration. A client identifies itself by a document URL the tenant has allowlisted; the gateway fetches, validates and caches the document, and advertises support in its discovery metadata.', slide: 36 },
   { id: 'per-tool', claim: 'Per-tool policy: authorization is evaluated on the actual JSON-RPC method and target (tools, prompts and resources, listing and invocation alike), not just "can this user reach this server".', slide: 36 },
   { id: 'entitlement', claim: 'Entitlement-aware discovery: tools a user is not entitled to are removed from listing responses in flight, so the agent never learns they exist and cannot be manipulated into attempting them. Applies to streamed and compressed responses alike.', slide: 36 },
