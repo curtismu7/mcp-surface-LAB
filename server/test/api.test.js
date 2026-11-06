@@ -27,6 +27,26 @@ test('health, info and story answer; the story fills every token for every verti
   });
 });
 
+test('rule 19: POST /api/mode {source} switches the server-side mode at runtime; /api/info follows; the body must be exactly {source}', async () => {
+  await withServer(async (url) => {
+    const before = await json(await get(url, '/api/info'));
+    assert.equal(before.realAvailable, true);
+    const toReal = await post(url, '/api/mode', { source: 'real' });
+    assert.equal(toReal.status, 200);
+    const afterReal = await json(await get(url, '/api/info'));
+    assert.equal(afterReal.source, 'real'); assert.equal(afterReal.mode, 'live'); assert.equal(afterReal.realAvailable, true); assert.equal(afterReal.realReason, null);
+    const toMock = await post(url, '/api/mode', { source: 'mock' });
+    assert.equal(toMock.status, 200);
+    const afterMock = await json(await get(url, '/api/info'));
+    assert.equal(afterMock.source, 'mock'); assert.equal(afterMock.mode, 'mock');
+    for (const body of [{ source: 'mock', extra: 1 }, { source: 'zzz-secret-value' }, {}, 'x', [1]]) {
+      const r = await post(url, '/api/mode', body);
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.ok(!(await r.text()).includes('zzz-secret-value'));
+    }
+  });
+});
+
 test('the state: Mock gives a generated scenario, Live gives the workspace engine, both the same shape', async () => {
   await withServer(async (url) => {
     const m = await json(await get(url, '/api/state?mode=mock&vertical=finance&scenario=catalog'));

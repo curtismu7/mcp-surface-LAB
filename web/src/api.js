@@ -17,3 +17,7 @@ export const postJson = (url, payload) => sendJson("POST", url, payload);
 export const putJson = (url, payload) => sendJson("PUT", url, payload);
 
 export const resetWorkspace = () => workspaceFetch("/api/reset", { method: "POST", body: "{}" }).then((r) => r.ok);
+
+// Rule 19: POST /api/mode {source:"mock"|"real"}. Returns { ok, status, body } (like sendJson): a refused
+// switch comes back as data, never an exception.
+export const setMode = (source) => sendJson("POST", "/api/mode", { source });

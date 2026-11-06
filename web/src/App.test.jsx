@@ -25,14 +25,14 @@ beforeAll(async () => {
   };
 });
 afterAll(async () => { globalThis.fetch = realFetch; await new Promise((r) => server.close(r)); });
-beforeEach(() => { cleanup(); forgetWorkspace(); seen = []; failDiagram = 0; try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ } window.location.hash = ""; });
+beforeEach(() => { cleanup(); forgetWorkspace(); seen = []; failDiagram = 0; try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ } window.location.hash = ""; realFetch(`${base}/api/mode`, { method: "POST", headers: { "content-type": "application/json", origin: base }, body: JSON.stringify({ source: "mock" }) }).catch(() => {}); });
 
 // Every wait is on a STATE (an element enabled or a text present), never on a clock; the timeouts are generous hang guards because the suite runs at machine load 60-500.
 const T = { timeout: 120000 };
 const mount = async () => { render(<App />); await screen.findByTestId("members", {}, T); };
 const tab = (name) => userEvent.click(screen.getByRole("tab", { name }));
 const click = async (id) => { await waitFor(() => expect(screen.getByTestId(id)).toBeEnabled(), T); await userEvent.click(screen.getByTestId(id)); };
-const live = async () => { await click("mode-live"); await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/LIVE mode/)); await screen.findByTestId("actor", {}, T); await waitFor(() => expect(screen.getByTestId("list-tools")).toBeEnabled(), T); };
+const live = async () => { await click("mode-real"); await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/LIVE mode/)); await screen.findByTestId("actor", {}, T); await waitFor(() => expect(screen.getByTestId("list-tools")).toBeEnabled(), T); };
 const setValue = (id, value) => fireEvent.change(screen.getByTestId(id), { target: { value } });
 const pick = (id, value) => userEvent.selectOptions(screen.getByTestId(id), value);
 

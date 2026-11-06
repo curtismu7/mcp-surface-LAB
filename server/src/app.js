@@ -30,7 +30,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export { isPageAddress };
 
 // One route table: the 405 answers (with Allow) are built from it, and nothing else. ":op" matches one segment; HEAD is added wherever GET is.
-const ROUTES = { '/api/health': ['GET'], '/api/state': ['GET'], '/api/story': ['GET'], '/api/diagram': ['GET'], '/api/info': ['GET'], '/api/act/:op': ['POST'], '/api/reset': ['POST'] };
+const ROUTES = { '/api/health': ['GET'], '/api/state': ['GET'], '/api/story': ['GET'], '/api/diagram': ['GET'], '/api/info': ['GET'], '/api/mode': ['GET', 'POST'], '/api/act/:op': ['POST'], '/api/reset': ['POST'] };
 // The page itself ("/") is a route too, but only when a web build is served (see createApp): the wrong method on it is a 405 with Allow, not a 404.
 const METHODS = buildMethodTable(ROUTES);
 const PAGE_METHODS = buildMethodTable({ ...ROUTES, '/': ['GET'] });
@@ -39,6 +39,8 @@ const fail = (res, status, code, headers = {}) => res.set(headers).status(status
 const actName = (p) => { try { return decodeURIComponent(p.split('/')[2] ?? ''); } catch { return ''; } }; // /act/<name> -> name
 
 export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST, env = process.env } = {}) {
+  // The runtime server-side mode (rule 19): the source the toggle switches. It starts at the configured default.
+  let currentSource = () => defaultMode();
   const app = express();
   app.disable('x-powered-by');
   app.use(hostCheck);
@@ -88,13 +90,25 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
     if (name !== undefined && !(typeof name === 'string' && DIAGRAM_NAMES.includes(name))) return res.status(400).json({ error: 'bad_diagram', detail: 'the diagram is not one the lab has' });
     return res.json(buildDiagram(castFor(req), name ?? DIAGRAM_NAMES[0]));
   });
-  api.get('/info', (_req, res) => { noStore(res); res.json({ mode: defaultMode(), modes: ['mock', 'live'], simulated: true, release: '2026-11-02', unverified: true }); });
+  api.get('/info', (_req, res) => { noStore(res); const src = currentSource(); res.json({ mode: src === 'real' ? 'live' : src, modes: ['mock', 'live'], ...rule19View(), simulated: true, release: '2026-11-02', unverified: true }); });
+
+  // Rule 19: the Mock/Real toggle's runtime server-side mode. source "mock" is the recorded tables; "real" is the
+  // lab's Live engine (loopback-only, nothing leaves the machine), so realAvailable is always true.
+  const rule19View = () => ({ source: currentSource(), realAvailable: true, realReason: null });
+  api.get('/mode', (_req, res) => { noStore(res); res.json(rule19View()); });
+  api.post('/mode', (req, res) => {
+    noStore(res);
+    const b = isObj(req.body) ? req.body : {};
+    if (Object.keys(b).length !== 1 || !['mock', 'real'].includes(b.source)) return res.status(400).json({ error: 'bad_mode', detail: 'body must be exactly {source: "mock" or "real"}' });
+    currentSource = () => b.source; // runtime server-side state: every later read sees the switched mode
+    return res.json(rule19View());
+  });
 
   api.get('/state', workspace, (req, res, next) => {
     try {
       const id = req.workspaceId;
       noStore(res);
-      const mode = modeOf(req.query.mode); if (!mode) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
+      const mode = modeOf(req.query.mode === 'real' ? 'live' : req.query.mode); if (!mode) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (!queryVertical(req, res)) return;
       const vertical = verticalOf(req);
       if (mode === 'mock') return res.json({ mode, vertical, workspace: id, ...mockState(table, vertical, req.query.scenario) });
