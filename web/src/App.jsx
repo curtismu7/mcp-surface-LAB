@@ -28,6 +28,12 @@ export const TABS = [
 const TAIL = "Every product claim is a Ping release claim, UNVERIFIED on our tenant (release 2026-11-02). Nothing here calls a real gateway, MCP server, identity provider or tenant.";
 export const BANNER_UNKNOWN = `SIMULATED, MOCK or LIVE mode (loopback only, no outbound network). ${TAIL}`;
 const MODE_KEY = "msf.mode";
+const THEME_KEY = "msf.theme";
+const THEMES = [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]];
+function initialTheme() {
+  try { const t = localStorage.getItem(THEME_KEY); if (t === "light" || t === "dark") return t; } catch { /* storage blocked */ }
+  return "auto";
+}
 const ACTION_TABS = ["aggregate", "discovery", "openapi", "credentials", "catalog", "authorization", "creation"];
 
 const tabFromHash = () => { const h = window.location.hash.replace("#", ""); return TABS.some((t) => t.id === h) ? h : "aggregate"; };
@@ -53,8 +59,11 @@ export default function App() {
   const [resetMsg, setResetMsg] = useState("");
   const [actorChoice, setActor] = useState("");
   const [adminChoice, setAdmin] = useState("");
+  const [theme, setTheme] = useState(initialTheme);
   const tabsRef = useRef(null);
   const lab = useLab({ mode, vertical, scenario: scenarioId });
+
+  useEffect(() => { if (theme === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme; }, [theme]);
 
   useEffect(() => { getJson("/api/info").then((i) => setModeState((m) => m || savedMode() || i.mode), () => setModeState((m) => m || savedMode() || "mock")); }, []);
   useEffect(() => {
@@ -68,6 +77,10 @@ export default function App() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
   const setMode = (m) => { setModeState(m); try { window.localStorage.setItem(MODE_KEY, m); } catch { /* storage blocked */ } };
+  const pickTheme = (next) => {
+    try { if (next === "auto") localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, next); } catch { /* not remembered */ }
+    setTheme(next);
+  };
   const select = (id) => { setTab(id); try { window.history.replaceState(null, "", `#${id}`); } catch { /* ignore */ } };
 
   // Keep the active tab fully in view in the scrolling tab strip (375px).
@@ -150,6 +163,11 @@ export default function App() {
                 </label>
               </>
             )}
+            <label className="shell-theme">Theme
+              <select value={theme} onChange={(e) => pickTheme(e.target.value)}>
+                {THEMES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </label>
             <button type="button" onClick={reset} data-testid="reset">Reset</button>
             <button type="button" aria-pressed={presenter} onClick={() => setPresenter((v) => !v)} data-testid="presenter">{presenter ? "Exit presenter (Esc)" : "Presenter (P)"}</button>
           </div>

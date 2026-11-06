@@ -121,3 +121,6 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .verdict { font-weight: 700; }
 .verdict[data-state="ok"] { color: var(--status-ok); }
 .verdict[data-state="bad"] { color: var(--danger-text); }
+
+.shell-theme { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+.shell-theme select { min-height: 32px; padding: 4px 8px; }
