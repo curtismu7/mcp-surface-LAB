@@ -184,3 +184,13 @@ test('request-shape statuses: a known route with the wrong method is 405, a non-
     for (const vertical of ['finance', 'health', 'retail', undefined]) assert.equal((await post(url, '/api/act/advance', { mode: 'live', vertical, params: { minutes: 1 } }, W('vert-ok'))).status, 200, String(vertical));
   });
 });
+
+test('GET /api/shelf answers the shelf URL (null when unconfigured)', async () => {
+  await withServer(async (url) => {
+    const res = await fetch(`${url}/api/shelf`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(Object.keys(body), ['shelfUrl']);
+    assert.equal(body.shelfUrl, null);
+  }, { env: {} });
+});

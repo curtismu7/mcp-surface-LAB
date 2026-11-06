@@ -18,6 +18,7 @@ import { Engine } from './engine.js';
 import { isOp, isPure } from './actions.js';
 import { liveState, mockState, runAction } from './service.js';
 import { maskDeep, maskStory } from './mask.js';
+import { shelfInfo } from './shelfLink.js';
 import { buildMethodTable, charsetProblem, isPageAddress, methodNotAllowed } from './shared/hygiene.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -37,7 +38,7 @@ const PAGE_METHODS = buildMethodTable({ ...ROUTES, '/': ['GET'] });
 const fail = (res, status, code, headers = {}) => res.set(headers).status(status).json({ error: code });
 const actName = (p) => { try { return decodeURIComponent(p.split('/')[2] ?? ''); } catch { return ''; } }; // /act/<name> -> name
 
-export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST } = {}) {
+export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST, env = process.env } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(hostCheck);
@@ -70,6 +71,7 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
   // Defence in depth: every JSON answer is masked for credential-shaped values, whatever path produced it.
   api.use((req, res, next) => { const send = res.json.bind(res); const mask = req.path === '/story' ? maskStory : maskDeep; res.json = (b) => send(mask(b)); next(); });
   api.use('/health', health.router);
+  api.get('/shelf', (_req, res) => { noStore(res); res.json(shelfInfo(env)); });
   const verticalOf = (req) => verticalFrom(req.body?.vertical ?? req.query.vertical);
   const castFor = (req) => loadCast(configFile, verticalOf(req));
   const noStore = (res) => res.set('Cache-Control', 'no-store');
