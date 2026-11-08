@@ -12,6 +12,7 @@ services:
     environment:
       PORT: "7350"
       MSFLAB_BIND: 0.0.0.0
+      SHELF_URL: ${SHELF_URL:-http://127.0.0.1:4400}
       MSF_LAB_MODE: ${MSF_LAB_MODE:-mock}
     read_only: true
     cap_drop: [ALL]
