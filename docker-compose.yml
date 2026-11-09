@@ -11,6 +11,8 @@ services:
       - "127.0.0.1:${HOST_PORT:-7350}:7350"
     environment:
       PORT: "7350"
+      # The name the family lab-proxy (https://local.ping-devops.com:8443) sends in Host; loopback is always accepted.
+      LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-mcp-surface-lab.local.ping-devops.com}
       MSFLAB_BIND: 0.0.0.0
       SHELF_URL: ${SHELF_URL:-http://127.0.0.1:4400}
       MSF_LAB_MODE: ${MSF_LAB_MODE:-mock}

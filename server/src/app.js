@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { hostCheck, sameOriginWrites } from './safety.js';
+import { makeHostCheck, makeSameOriginWrites } from './safety.js';
 import { createHealth } from './health.js';
 import { VERTICALS, loadCast, verticalFrom } from './cast.js';
 import { defaultMode, modeOf } from './config.js';
@@ -38,13 +38,13 @@ const PAGE_METHODS = buildMethodTable({ ...ROUTES, '/': ['GET'] });
 const fail = (res, status, code, headers = {}) => res.set(headers).status(status).json({ error: code });
 const actName = (p) => { try { return decodeURIComponent(p.split('/')[2] ?? ''); } catch { return ''; } }; // /act/<name> -> name
 
-export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST, env = process.env } = {}) {
+export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST, env = process.env, proxyHosts = new Set() } = {}) {
   // The runtime server-side mode (rule 19): the source the toggle switches. It starts at the configured default.
   let currentSource = () => defaultMode();
   const app = express();
   app.disable('x-powered-by');
-  app.use(hostCheck);
-  app.use(sameOriginWrites);
+  app.use(makeHostCheck(proxyHosts));
+  app.use(makeSameOriginWrites(proxyHosts));
   app.use((_req, res, next) => {
     res.set('X-Content-Type-Options', 'nosniff'); res.set('X-Frame-Options', 'DENY');
     res.set('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
