@@ -109,7 +109,7 @@ test('app CSS follows the CSS standard: tokens only, no dark-mode media query, n
   assert.ok(!/prefers-color-scheme/.test(css)); assert.ok(!/!important/.test(css)); assert.ok(!/font-style:\s*italic/.test(css));
   const widths = [...css.matchAll(/@media \((?:max|min)-width: (\d+)px\)/g)].map((m) => m[1]);
   assert.ok(widths.length > 0 && widths.every((w) => w === '600' || w === '900'), widths.join());
-  assert.ok(!/purple|violet|magenta|indigo/i.test(css + read('web/src/styles/standalone-ui.css').replace(/--[a-z-]+:[^;]*;/g, '')));
+  assert.ok(!/purple|violet|magenta|indigo/i.test(css + read('web/src/styles/standalone-ui.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[a-z-]+:[^;]*;/g, ''))); // comments are prose: the shared sheet says "no purple"
   const main = read('web/src/main.jsx');
   assert.ok(main.indexOf('standalone-ui.css') < main.indexOf('app.css'), 'the shared stylesheet loads before the app stylesheet');
   assert.ok(!/style=\{\{/.test(WEB_FILES.map((f) => read(`web/src/${f}`)).join('\n')), 'no style attributes outside diagram positions');
