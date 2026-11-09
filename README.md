@@ -3,7 +3,7 @@
 A simulation of Ping's MCP gateway release claims (deck slides 36 to 39, release 2026-11-02): an MCP Aggregate whose own policy caps its members, entitlement-aware discovery, OpenAPI to MCP, backend credential injection with token pass-through, an MCP Catalog, OAuth 2.1 with CIMD, and approval-gated creation.
 
 Tier: Demo
-Repo: https://github.com/ping-sandbox/mcp-surface-LAB
+Repo: https://github.com/curtismu7/mcp-surface-LAB
 Catalog: D106
 
 **Every product claim is a Ping release claim, UNVERIFIED on our tenant.** The release is not on our tenant. Nothing here calls a real gateway, MCP server, identity provider or network. A banner on every tab, presenter mode included, says so.
