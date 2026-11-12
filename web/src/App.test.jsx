@@ -32,7 +32,7 @@ const T = { timeout: 120000 };
 const mount = async () => { render(<App />); await screen.findByTestId("members", {}, T); };
 const tab = (name) => userEvent.click(screen.getByRole("tab", { name }));
 const click = async (id) => { await waitFor(() => expect(screen.getByTestId(id)).toBeEnabled(), T); await userEvent.click(screen.getByTestId(id)); };
-const live = async () => { await click("mode-real"); await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/LIVE mode/)); await screen.findByTestId("actor", {}, T); await waitFor(() => expect(screen.getByTestId("list-tools")).toBeEnabled(), T); };
+const live = async () => { await fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "real" } }); await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/LIVE mode/), T); await screen.findByTestId("actor", {}, T); await waitFor(() => expect(screen.getByTestId("list-tools")).toBeEnabled(), T); };
 const setValue = (id, value) => fireEvent.change(screen.getByTestId(id), { target: { value } });
 const pick = (id, value) => userEvent.selectOptions(screen.getByTestId(id), value);
 
@@ -192,8 +192,8 @@ describe("vertical switch", () => {
         for (const t of TABS) {
           await tab(t.label);
           for (const v of ["health", "retail", "finance"]) {
-            await pick("vertical", v);
-            await waitFor(() => expect(screen.getByTestId("vertical").value).toBe(v), T);
+            await pick("vertical-select", v);
+            await waitFor(() => expect(screen.getByTestId("vertical-select").value).toBe(v), T);
             await waitFor(() => expect(document.querySelector("[role=tabpanel]").textContent.length).toBeGreaterThan(50), T);
             expect(screen.queryByTestId("tab-error")).toBeNull();
           }

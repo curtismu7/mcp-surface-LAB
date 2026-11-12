@@ -12,7 +12,11 @@ import TalkTrack from "./components/TalkTrack";
 import LastAction from "./components/LastAction";
 import { ClaimTag } from "./components/Bits";
 import useLab from "./hooks/useLab";
+import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
 import { getJson, resetWorkspace, setMode } from "./api";
+
+import fs from "node:fs";
+const LAB_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version || null; } catch { return null; } })();
 
 export const TABS = [
   { id: "aggregate", label: "Aggregate" },
@@ -30,7 +34,6 @@ const TAIL = "Every product claim is a Ping release claim, UNVERIFIED on our ten
 export const BANNER_UNKNOWN = `SIMULATED, MOCK or LIVE mode (loopback only, no outbound network). ${TAIL}`;
 const MODE_KEY = "msf.mode";
 const THEME_KEY = "msf.theme";
-const THEMES = [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]];
 function initialTheme() {
   try { const t = localStorage.getItem(THEME_KEY); if (t === "light" || t === "dark") return t; } catch { /* storage blocked */ }
   return "auto";
@@ -61,10 +64,12 @@ export default function App() {
   const [actorChoice, setActor] = useState("");
   const [adminChoice, setAdmin] = useState("");
   const [theme, setTheme] = useState(initialTheme);
+  const [fontStep, setFontStep] = useState(() => { try { const f = localStorage.getItem("msf.font"); return ["S", "M", "L"].includes(f) ? f : "M"; } catch { return "M"; } });
   const tabsRef = useRef(null);
   const lab = useLab({ mode, vertical, scenario: scenarioId });
 
   useEffect(() => { if (theme === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => { applyFontSize(fontStep); try { localStorage.setItem("msf.font", fontStep); } catch { /* not remembered */ } }, [fontStep]);
 
   useEffect(() => { getJson("/api/info").then((i) => setModeState((m) => m || savedMode() || i.mode), () => setModeState((m) => m || savedMode() || "mock")); }, []);
   useEffect(() => {
@@ -149,19 +154,19 @@ export default function App() {
             {!presenter && story && <p className="head__intro">{story.intro}</p>}
           </div>
           <div className="head__tools">
-            <ShelfLink />
-            <div className="seg" role="group" aria-label="Mode">
-              <button type="button" aria-pressed={mode === "mock"} onClick={() => switchSource("mock")} data-testid="mode-mock">Mock</button>
-              <button type="button" aria-pressed={mode === "real" || mode === "live"} onClick={() => switchSource("real")} data-testid="mode-real">Real</button>
-            </div>
+            <TopMenu
+              mode={{ value: mode === "live" ? "real" : (mode || "mock"), onChange: switchSource }}
+              vertical={{ value: vertical, onChange: setVertical, options: story ? story.verticals : ["finance"] }}
+              theme={{ value: theme, onChange: pickTheme }}
+              fontSize={{ value: fontStep, onChange: setFontStep }}
+              present={{ active: presenter, onToggle: () => setPresenter((v) => !v), label: "Presenter (P)" }}
+              help={{ href: "https://github.com/curtismu7/mcp-surface-LAB#readme" }}
+              version={LAB_VERSION}
+              onReset={reset}
+            >
+              <ShelfLink />
+            </TopMenu>
             <span className="chip" data-testid="mode">Mode: {mode || "..."}{mode === "live" ? " (local engine, loopback)" : mode === "mock" ? " (tables)" : ""}</span>
-            {!presenter && (
-              <label className="inline">Vertical{" "}
-                <select value={vertical} onChange={(e) => setVertical(e.target.value)} data-testid="vertical">
-                  {(story ? story.verticals : ["finance"]).map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </label>
-            )}
             {!presenter && mode === "live" && users.length > 0 && (
               <>
                 <label className="inline">Call as{" "}
@@ -176,13 +181,6 @@ export default function App() {
                 </label>
               </>
             )}
-            <label className="shell-theme">Theme
-              <select value={theme} onChange={(e) => pickTheme(e.target.value)}>
-                {THEMES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={reset} data-testid="reset">Reset</button>
-            <button type="button" aria-pressed={presenter} onClick={() => setPresenter((v) => !v)} data-testid="presenter">{presenter ? "Exit presenter (Esc)" : "Presenter (P)"}</button>
           </div>
         </div>
       </header>

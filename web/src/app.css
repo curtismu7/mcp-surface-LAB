@@ -1,7 +1,8 @@
 /* App layout only. Colours, fonts, controls and the dark theme come from styles/standalone-ui.css (loaded first). Tokens only here:
    no colour literals, no dark-mode media queries, no forced priority, breakpoints 600px and 900px only. */
 .app { max-width: min(100%, 1600px); margin: 0 auto; padding: 0 0 32px; }
-.head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; padding: 16px 0 8px; flex-wrap: wrap; }
+.head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; padding: 16px 0 8px; flex-wrap: wrap; position: relative; }
+html { font-size: var(--fs, 16px); }
 .head__title { margin: 0 0 4px; font-size: 24px; }
 .head__intro { margin: 0; max-width: 78ch; color: var(--text-body); font-size: 14px; line-height: 1.5; }
 .head__tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
