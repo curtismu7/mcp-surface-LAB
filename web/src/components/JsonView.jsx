@@ -162,6 +162,20 @@ export default function JsonView({ value, label, testId, marks = {}, lineNumbers
     );
   };
 
+  // A plain-string value renders as text only: no toggle (nothing to re-color),
+  // and the pane's testid sits on the pre so textContent is exactly the string.
+  if (typeof value === "string") {
+    return (
+      <pre
+        data-testid={testId || "json-view-pre"}
+        aria-label={label}
+        style={{ margin: 0, padding: "10px 14px", borderRadius: 8, overflowX: "auto", fontSize: 12.5, lineHeight: 1.6, background: pal.bg, border: `1px solid ${pal.border}`, fontFamily: '"IBM Plex Mono",ui-monospace,monospace', color: pal.string, whiteSpace: "pre-wrap", wordBreak: "break-all" }}
+      >
+        {vis(value)}
+      </pre>
+    );
+  }
+
   return (
     <div data-testid={testId || "json-view"}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
