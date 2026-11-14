@@ -1,10 +1,18 @@
 import { useRef } from "react";
 import { visible } from "../safeText";
+import JsonView from "./JsonView.jsx";
 
 // Raw JSON or text, rendered as text only (never markup). Control and bidi characters are shown as visible escapes.
 export function Json({ value, label, testId, tall }) {
-  return <pre className={`json${tall ? " json--tall" : ""}`} tabIndex={0} aria-label={label} data-testid={testId}>{visible(typeof value === "string" ? value : JSON.stringify(value, null, 2))}</pre>;
+  // Rule 24: JSON panes render through the shared JsonView (colored, theme-aware,
+  // Colored/Raw toggle, visible() guard). `tall` keeps the old sizing hook.
+  return (
+    <div className={tall ? "json json--tall" : "json"} style={tall ? { maxHeight: 420, overflow: "auto" } : undefined}>
+      <JsonView value={typeof value === "string" ? safeParse(value) : value} label={label} testId={testId} />
+    </div>
+  );
 }
+function safeParse(s) { try { return JSON.parse(s); } catch { return { raw: s }; } }
 
 // Every product claim carries this tag. It is on every tab, and in presenter mode too.
 export function ClaimTag({ label }) {
