@@ -20,6 +20,7 @@ import { catalogOps } from './ops-catalog.js';
 import { oauthOps } from './ops-oauth.js';
 import { creationOps } from './ops-creation.js';
 import { aggregateOps } from './ops-aggregate.js';
+import { mockTrace } from './gatewayTrace.js';
 
 const AUDIT_HEADROOM = 8;
 export const LIMITS = { audit: 500, recordings: 200, apps: 30, members: 12, hops: 40, clockMinutes: 1440, clockTotalDays: 90, grants: 8, listNames: 80 };
@@ -62,6 +63,7 @@ export class Engine {
     this.faults = { hopIgnoresCap: false, aggregateSkipsCheck: false, ...(faults || {}) };
     this.audit = []; this.auditDropped = 0; this.recordings = []; this.sessionLogging = false;
     this.hops = []; this.hopsTruncated = false; this.trace = null;
+    this.gw = null; this.gwTrace = null; // "What Privilege did": the decisions of the call being made, and the finished record (only for a web action, like the hops)
     this.agents = AGENTS(cast).map((a) => ({ ...a }));
     this.tenants = [cast.castHost, cast.castTenant2];
     this.auth = new AuthServer({ host: cast.castHost, docs: cimdDocs(cast), allowlist: CIMD_ALLOWLIST_DEFAULT(cast) });
@@ -75,6 +77,12 @@ export class Engine {
     if (!this.trace) return;
     if (this.hops.length >= LIMITS.hops) { this.hopsTruncated = true; return; }
     this.hops.push({ label, request: scrub(request), response: scrub(response) });
+  }
+  // "What Privilege did": one decision the simulated gateway really evaluated, in the order it evaluated it. Only called where the code takes the branch, so a check that
+  // was never reached is never listed. `evidence` is fixed lab text (never the caller's input). Kept only while a web action is being traced, like hop().
+  check(id, label, ok, evidence, outcome) {
+    if (!this.gw || this.gw.decisions.length >= 40) return;
+    this.gw.decisions.push({ id, label, outcome: outcome || (ok ? 'pass' : 'fail'), evidence });
   }
   // Called BEFORE an action changes anything (perform() does it for every non-pure action), with headroom for the few entries one action can write, so a full
   // log refuses the whole request instead of mutating state and then answering 507.
@@ -188,21 +196,46 @@ export class Engine {
   }
 
   // What the caller may see or do on one application, for one JSON-RPC method and its target. Returns { ok, reason } and never throws.
-  authorize(app, user, rpc, cap) {
+  authorize(app, user, rpc, cap, scope = 'gateway') {
     const g = this.grantsOf(app.policy, user);
-    if (!METHODS.includes(rpc.method)) return { ok: false, reason: 'method_not_permitted' };
+    const at = scope === 'member' ? 'Member hop: ' : '';
+    const ck = (id, label, ok, evidence, outcome) => this.check(`${scope}.${id}`, at + label, ok, evidence, outcome);
+    if (!METHODS.includes(rpc.method)) { ck('method', 'JSON-RPC method', false, 'not one of the methods the gateway permits'); return { ok: false, reason: 'method_not_permitted' }; }
+    ck('method', 'JSON-RPC method', true, `${rpc.method} is a method the gateway permits`);
     if (rpc.method === 'ping') return { ok: true };
-    if (!g.any) return { ok: false, reason: 'no_policy' }; // deny by default, from the very first initialize (measured, AI-DEMO2 note)
+    if (!g.any) { ck('policy', 'Policy for this caller', false, 'no grant on this application matches the caller\'s groups: denied by default, from the very first initialize'); return { ok: false, reason: 'no_policy' }; } // deny by default, from the very first initialize (measured, AI-DEMO2 note)
+    ck('policy', 'Policy for this caller', true, 'a grant on this application matches the caller\'s groups');
     if (rpc.method === 'initialize' || LIST_METHODS.includes(rpc.method)) return { ok: true };
     if (rpc.method === 'tools/call') {
       const name = rpc.params.name;
-      if (typeof name !== 'string' || !app.tools.some((t) => t.name === name)) return { ok: false, reason: 'unknown_tool' };
-      if (!this.permits(g.tools, name)) return { ok: false, reason: 'not_in_policy' };
-      if (cap && !this.faults.hopIgnoresCap && !cap.includes(name)) return { ok: false, reason: 'cap' };
+      if (typeof name !== 'string' || !app.tools.some((t) => t.name === name)) { ck('target', 'Tool exists', false, 'the application has no tool by that name (the caller gets the same bare refusal as for a tool outside its policy)'); return { ok: false, reason: 'unknown_tool' }; }
+      ck('target', 'Tool exists', true, `the application has a tool named ${name}`);
+      if (!this.permits(g.tools, name)) { ck('entitlement', 'Tool in the caller\'s policy', false, `${name} is not in the policy grants that match the caller`); return { ok: false, reason: 'not_in_policy' }; }
+      ck('entitlement', 'Tool in the caller\'s policy', true, `${name} is in a policy grant that matches the caller`);
+      if (cap && this.faults.hopIgnoresCap) ck('cap', 'Aggregate cap', true, 'the fault switch "member hop ignores the cap" is on, so the cap carried from the aggregate was not applied', 'info');
+      else if (cap) {
+        if (!cap.includes(name)) { ck('cap', 'Aggregate cap', false, `${name} is not in the cap the aggregate carried to this hop`); return { ok: false, reason: 'cap' }; }
+        ck('cap', 'Aggregate cap', true, `${name} is in the cap the aggregate carried to this hop`);
+      }
       return { ok: true };
     }
-    if (rpc.method === 'prompts/get') { const n = rpc.params.name; return typeof n === 'string' && app.prompts.some((p) => p.name === n) ? (this.permits(g.prompts, n) ? { ok: true } : { ok: false, reason: 'not_in_policy' }) : { ok: false, reason: 'unknown_prompt' }; }
-    if (rpc.method === 'resources/read') { const u = rpc.params.uri; return typeof u === 'string' && app.resources.some((r) => r.uri === u) ? (this.permits(g.resources, u) ? { ok: true } : { ok: false, reason: 'not_in_policy' }) : { ok: false, reason: 'unknown_resource' }; }
+    if (rpc.method === 'prompts/get') {
+      const n = rpc.params.name;
+      if (!(typeof n === 'string' && app.prompts.some((x) => x.name === n))) { ck('target', 'Prompt exists', false, 'the application has no prompt by that name'); return { ok: false, reason: 'unknown_prompt' }; }
+      ck('target', 'Prompt exists', true, `the application has a prompt named ${n}`);
+      if (!this.permits(g.prompts, n)) { ck('entitlement', 'Prompt in the caller\'s policy', false, `${n} is not in the policy grants that match the caller`); return { ok: false, reason: 'not_in_policy' }; }
+      ck('entitlement', 'Prompt in the caller\'s policy', true, `${n} is in a policy grant that matches the caller`);
+      return { ok: true };
+    }
+    if (rpc.method === 'resources/read') {
+      const u = rpc.params.uri;
+      if (!(typeof u === 'string' && app.resources.some((x) => x.uri === u))) { ck('target', 'Resource exists', false, 'the application has no resource at that address'); return { ok: false, reason: 'unknown_resource' }; }
+      ck('target', 'Resource exists', true, 'the application has a resource at that address');
+      if (!this.permits(g.resources, u)) { ck('entitlement', 'Resource in the caller\'s policy', false, 'the resource is not in the policy grants that match the caller'); return { ok: false, reason: 'not_in_policy' }; }
+      ck('entitlement', 'Resource in the caller\'s policy', true, 'the resource is in a policy grant that matches the caller');
+      return { ok: true };
+    }
+    ck('method', 'JSON-RPC method', false, 'the gateway has no handler for this method');
     return { ok: false, reason: 'method_not_permitted' };
   }
 
@@ -261,7 +294,7 @@ export class Engine {
   callApp(app, user, rpc, ctx = {}) {
     const member = ctx.via === 'aggregate';
     const where = member ? 'member hop' : 'gateway';
-    const dec = this.authorize(app, user, rpc, ctx.cap);
+    const dec = this.authorize(app, user, rpc, ctx.cap, member ? 'member' : 'gateway');
     this.hop(member ? `gateway to member hop: ${ctx.alias}` : 'gateway authorizes the JSON-RPC method and target', { method: safeMethod(rpc.method), target: rpc.params.name ?? rpc.params.uri ?? null, user: user.id, capHeader: ctx.cap ? { tools: ctx.cap } : undefined }, { allowed: dec.ok, reason: dec.ok ? undefined : dec.reason });
     if (!dec.ok) {
       const enforcedAt = member ? (dec.reason === 'cap' ? 'member-hop (aggregate cap)' : 'member-hop (member policy)') : 'gateway (app policy)';
@@ -273,9 +306,12 @@ export class Engine {
     const upstreamCall = ['initialize', 'tools/call', 'prompts/get', 'resources/read'].includes(rpc.method);
     this.cur = { received: null, identity: null, containerEnv: null };
     if (upstreamCall) {
+      if (!member) this.check('gateway.reach', 'Application reachable', app.up, app.up ? 'the gateway reached the application' : 'the application is down, so the gateway could not connect');
       if (!member && !app.up) { this.deny('app_unreachable', { user: user.id, app: app.id }); throw refuse('app_unreachable', 'the application is unreachable', 502, { enforcedAt: 'gateway (connect)' }); }
       conn = this.connect(app, ctx);
-      const inj = this.inject(app, user, rpc, ctx);
+      let inj;
+      try { inj = this.inject(app, user, rpc, ctx); } catch (e) { if (e instanceof InputError) this.check(`${where === 'gateway' ? 'gateway' : 'member'}.credential`, 'Backend credential', false, e.message); throw e; }
+      this.check(`${where === 'gateway' ? 'gateway' : 'member'}.credential`, 'Backend credential', true, `credential mode ${inj.received.mode}: the backend sees ${inj.identity.kind === 'anonymous' ? 'no credential' : `${inj.identity.kind} ${inj.identity.actor}`}`);
       identity = inj.identity; credential = inj.received; this.cur.received = inj.received; this.cur.identity = inj.identity;
     }
     const answer = this.upstreamAnswer(app, rpc, identity, user.id);
@@ -284,6 +320,11 @@ export class Engine {
     const g = this.grantsOf(app.policy, user);
     const keep = (kind, it) => (kind === 'tools' ? this.permits(g.tools, it.name) : kind === 'prompts' ? this.permits(g.prompts, it.name) : this.permits(g.resources, it.uri));
     const out = filterWire(wire, keep);
+    const filtered = out.stats.frames.filter((f) => f.listing);
+    this.check(`${where === 'gateway' ? 'gateway' : 'member'}.filter`, 'In-flight filter', true, filtered.length
+      ? `${filtered.map((f) => `${f.listing}: ${f.before} in the upstream answer, ${f.after} let through`).join('; ')}`
+      : 'no listing in the upstream answer; every frame was checked for hidden names and none was found', 'pass');
+    if (!member && this.gw) this.gw.wire = out.headers;
     this.hop(`upstream wire (${style}) then the in-flight filter`, { style, upstreamChunks: out.stats.upstreamChunks }, { frames: out.stats.frames.map((f) => ({ kind: f.kind, listing: f.listing, before: f.before, after: f.after })) });
     const message = out.messages.find((m) => m.id !== undefined) || out.messages[out.messages.length - 1];
     if (!message) throw refuse('unparseable_frame', 'the upstream response carried no message the lab could read, so it was refused', 502);
@@ -296,8 +337,10 @@ export class Engine {
     const k = `${ctx.aggregateId}/${app.id}`;
     const c = this.conn[k] || (this.conn[k] = { state: 'idle', connects: 0, attempts: 0, calls: 0, lastError: '' });
     c.attempts++;
-    if (!app.up) { c.state = 'failed'; c.lastError = 'member_unreachable'; throw refuse('member_unreachable', `${ctx.alias}: the member is unreachable`, 502, { enforcedAt: 'member-hop (connect)', memberState: 'unreachable' }); }
-    if (app.transport === 'sse') { c.state = 'failed'; c.lastError = 'member_timeout'; throw refuse('member_timeout', `${ctx.alias}: the member did not answer within the lab's simulated 30 seconds`, 504, { enforcedAt: 'member-hop (connect)', memberState: 'hung', measured: 'AI-DEMO2 note: the aggregate opened an event stream to a member recorded as sse and waited for an event the server never sent; swapping the member for another app on the same server did not help' }); }
+    const cid = 'member.connect'; const clabel = 'Member connection';
+    if (!app.up) { this.check(cid, clabel, false, 'the member is unreachable'); c.state = 'failed'; c.lastError = 'member_unreachable'; throw refuse('member_unreachable', `${ctx.alias}: the member is unreachable`, 502, { enforcedAt: 'member-hop (connect)', memberState: 'unreachable' }); }
+    if (app.transport === 'sse') { this.check(cid, clabel, false, 'the member is recorded as an event-stream (sse) transport and the lab simulates its 30 second timeout'); c.state = 'failed'; c.lastError = 'member_timeout'; throw refuse('member_timeout', `${ctx.alias}: the member did not answer within the lab's simulated 30 seconds`, 504, { enforcedAt: 'member-hop (connect)', memberState: 'hung', measured: 'AI-DEMO2 note: the aggregate opened an event stream to a member recorded as sse and waited for an event the server never sent; swapping the member for another app on the same server did not help' }); }
+    this.check(cid, clabel, true, c.state === 'connected' ? 'the member was already connected' : 'the member was connected now, on demand');
     if (c.state !== 'connected') { c.state = 'connected'; c.connects++; }
     c.calls++;
     return { state: c.state, connects: c.connects, calls: c.calls };
@@ -306,11 +349,31 @@ export class Engine {
   // ---- the tool call, as the agent makes it --------------------------------------------------------------------------------------------------
   // params: { user | as, target: { kind: 'app' | 'aggregate', id }, rpc: { method, params, id }, style }
   mcp(p) {
+    const seen = { target: null, rpc: null }; const startN = this.n.audit;
+    this.gw = this.trace ? { decisions: [], who: null, wire: null } : null; this.gwTrace = null;
+    try {
+      const res = this.mcpCall(p, seen);
+      if (this.gw && seen.rpc) this.gwTrace = this.buildGwTrace(seen, res, null, startN);
+      return res;
+    } catch (e) {
+      if (this.gw && e instanceof InputError) {
+        if (!seen.rpc) { try { seen.rpc = this.parseRpc(p.rpc); } catch { /* the request itself was refused before it was a gateway call */ } }
+        if (!seen.target && seen.rpc && isObj(p.target) && (p.target.kind === 'app' || p.target.kind === 'aggregate')) seen.target = p.target;
+        if (seen.rpc && seen.target) this.gwTrace = this.buildGwTrace(seen, null, e, startN);
+      }
+      throw e;
+    } finally { this.gw = null; }
+  }
+
+  // One call as the agent makes it. `seen` is filled as the request becomes known, so a refusal can still be shown as a gateway call.
+  mcpCall(p, seen) {
     take(p, ['user', 'as', 'target', 'rpc', 'style'], ['target', 'rpc']);
     take(p.target, ['kind', 'id'], ['kind', 'id']);
     if (p.target.kind !== 'app' && p.target.kind !== 'aggregate') throw refuse('bad_target', 'the target kind is app or aggregate');
+    seen.target = p.target;
     const who = this.caller(p);
     const rpc = this.parseRpc(p.rpc);
+    seen.rpc = rpc;
     if (p.style !== undefined && !STYLES.includes(p.style)) throw refuse('bad_style', 'style is json, sse, gzip or gzip-sse');
     this.assertRoom();
     this.n.call++;
@@ -327,20 +390,48 @@ export class Engine {
     return res;
   }
   targetLabel(t) { return typeof t?.id === 'string' && (Object.hasOwn(this.apps, t.id) || Object.hasOwn(this.aggregates, t.id)) ? `${t.kind}:${t.id}` : `${t.kind === 'aggregate' ? 'aggregate' : 'app'}:(unknown)`; }
+  // The trace of one call: the request as the agent sent it, the answer it got, and the decisions the simulated gateway evaluated between them (all `checked`, because
+  // this gateway computed them). The agent holds no key the lab models, so the Authorization line names who the caller is. Nothing the visitor typed goes in unmasked
+  // (scrub), and a refusal the engine gave no wire body for shows no body.
+  buildGwTrace(seen, res, err, startN) {
+    const { target, rpc } = seen;
+    const known = typeof target.id === 'string' && (target.kind === 'aggregate' ? Object.hasOwn(this.aggregates, target.id) : Object.hasOwn(this.apps, target.id));
+    const path = known ? (target.kind === 'aggregate' ? this.aggregates[target.id] : this.apps[target.id]).entryPath : '/(unknown path)';
+    const decisions = this.gw.decisions.map((d) => ({ ...d }));
+    const d = err?.data || {};
+    if (err && !decisions.some((x) => x.outcome === 'fail')) decisions.push({ id: 'refused', label: 'Refused', outcome: 'fail', evidence: err.message });
+    if (!fitsRecording(rpc.params)) decisions.push({ id: 'display', label: 'Request shown shortened', outcome: 'info', evidence: 'the lab keeps at most 12 list items, 24 keys, 4 levels and 300 characters per text when it shows what a visitor typed; the engine saw the whole request' });
+    const status = err ? (d.wire?.httpStatus ?? err.status) : (res.wire?.httpStatus ?? 200);
+    const body = err ? (d.rpc ?? d.wire?.body ?? null) : res.rpc;
+    const headers = err ? (body === null ? {} : { 'content-type': 'application/json' }) : (this.gw.wire || { 'content-type': 'application/json' });
+    const last = this.audit.filter((a) => a.n > startN).pop();
+    return mockTrace({
+      url: `https://gateway.example.invalid${path}`,
+      authorization: `Bearer <${this.gw.who || 'caller not identified'}: the lab does not model the credential value>`,
+      rpc: { jsonrpc: '2.0', id: rpc.id, method: safeMethod(rpc.method), params: scrub(rpc.params) },
+      status, headers, body, decisions,
+      record: last ? `Audit entry ${last.n}: ${last.kind}${last.code ? ` (${last.code})` : ''}${last.decision ? `, ${last.decision}` : ''}.` : null,
+    });
+  }
   // The caller: a signed-in user, or a headless agent acting as its owning user (the same policy and audit apply).
   caller(p) {
     if (p.as !== undefined) {
       if (p.user !== undefined) throw refuse('ambiguous_identity', 'give either a user or a headless agent, not both');
       const ag = typeof p.as === 'string' ? this.agents.find((a) => a.id === p.as) : null;
       if (!ag) throw refuse('unknown_agent', 'unknown agent', 404);
+      if (this.gw) this.gw.who = `agent key of ${ag.id}`;
+      this.check('agent.key', 'Agent key', ag.enabled, ag.enabled ? 'the key is enabled' : 'the key has been revoked');
       if (!ag.enabled) { this.deny('agent_revoked', { agent: ag.id }); throw refuse('agent_revoked', 'this agent has been revoked', 401); }
+      this.check('agent.scope', 'Key scope', ag.scopes.includes('mcp'), ag.scopes.includes('mcp') ? 'the key is scoped for mcp access' : 'the key is not scoped for mcp access');
       if (!ag.scopes.includes('mcp')) { this.deny('key_not_scoped_for_mcp', { agent: ag.id }); throw refuse('key_not_scoped_for_mcp', 'this key is not scoped for mcp access (measured wording, AI-DEMO2 note)', 403); }
       return { user: this.user(ag.owner), label: `agent:${ag.id} for ${ag.owner}`, agent: ag };
     }
     const u = this.user(p.user);
+    if (this.gw) this.gw.who = `signed-in user ${u.id}`;
     return { user: u, label: u.id };
   }
   directCall(app, user, rpc, p) {
+    this.check('gateway.kind', 'MCP application', app.kind !== 'http', app.kind === 'http' ? 'this application is an HTTP application, not an MCP server' : 'the application is an MCP server');
     if (app.kind === 'http') throw refuse('not_an_mcp_application', 'this application is an HTTP application, not an MCP server', 400);
     const r = this.callApp(app, user, rpc, { via: 'direct', style: p.style });
     this.hop('gateway to agent', { status: 200 }, { message: r.message.result ? Object.keys(r.message.result) : r.message.error });
@@ -383,7 +474,9 @@ export class Engine {
     const g = this.grantsOf(agg.policy, user);
     this.hop('aggregate endpoint: the aggregate\'s own policy', { method: safeMethod(rpc.method), user: user.id }, { granted: g.any });
     const jerr = (code, status, rpcCode, msg, extra = {}) => { throw refuse(code, msg, status, { rpc: rpcErr(rpc.id, rpcCode, msg), wire: { httpStatus: 200, note: 'the aggregate returns its refusals as JSON-RPC errors with HTTP 200 (measured, AI-DEMO2 note)' }, ...extra }); };
+    this.check('aggregate.method', 'Aggregate: JSON-RPC method', METHODS.includes(rpc.method), METHODS.includes(rpc.method) ? `${rpc.method} is a method the gateway permits` : 'not one of the methods the gateway permits');
     if (!METHODS.includes(rpc.method)) { this.deny('method_not_permitted', { user: user.id, aggregate: agg.id }); jerr('method_not_permitted', 403, -32601, 'method not permitted', { enforcedAt: 'aggregate', reason: 'method_not_permitted' }); }
+    if (rpc.method !== 'ping') this.check('aggregate.policy', 'Aggregate: policy for this caller', g.any, g.any ? 'a grant on the aggregate matches the caller\'s groups' : 'no grant on the aggregate matches the caller\'s groups: denied by default');
     if (rpc.method !== 'ping' && !g.any) { this.deny('no_policy', { user: user.id, aggregate: agg.id }); jerr('no_policy', 403, -32600, 'request refused by policy', { enforcedAt: 'aggregate', reason: 'no_policy' }); }
     const base = { wire: { httpStatus: 200, style: 'json', note: 'the aggregate answers in plain JSON (measured, AI-DEMO2 note)' } };
     if (rpc.method === 'ping') return { rpc: rpcOk(rpc.id, {}), ...base, operator: {} };
@@ -416,6 +509,8 @@ export class Engine {
       }
       members.push(row);
     }
+    const sum = (k) => members.reduce((n, x) => n + x[k].length, 0);
+    this.check('aggregate.listing', 'Aggregate: listing cut by the aggregate policy', true, `${tools.length} tool${tools.length === 1 ? '' : 's'} listed across ${members.length} member${members.length === 1 ? '' : 's'}; ${sum('hiddenByAggregate')} left out by the aggregate policy or a member tool filter (only counted where the member itself would have allowed them), ${sum('hiddenByMember')} left out by the member's own policy; no member was connected`);
     this.hop('aggregate lists: members resolved lazily, no member connected', { members: agg.members.length }, { tools: tools.length, members: members.map((x) => `${x.alias}: ${x.status}`) });
     return { rpc: rpcOk(rpc.id, { tools }), ...base, operator: { enforcedAt: 'aggregate (listing)', members, connectsThisCall: 0, log: members.flatMap((x) => x.hiddenByAggregate.map((n) => `Removing tool the aggregate policy does not permit: ${n}`)) } };
   }
@@ -424,18 +519,23 @@ export class Engine {
     const name = rpc.params.name;
     if (typeof name !== 'string' || name.length > 200) jerr('bad_rpc', 400, -32602, 'a tool name is required', { enforcedAt: 'aggregate' });
     const i = name.indexOf('__');
+    this.check('aggregate.namespace', 'Aggregate: tool name is <alias>__<tool>', i > 0, i > 0 ? 'the tool name carries a member alias prefix' : 'the tool name has no member alias prefix');
     if (i <= 0) { this.deny('not_namespaced', { user: user.id, aggregate: agg.id }); jerr('not_namespaced', 400, -32600, 'the tool name is not namespaced; expected <alias>__<tool>', { enforcedAt: 'aggregate', reason: 'not_namespaced' }); }
     const alias = name.slice(0, i); const bare = name.slice(i + 2);
     const m = agg.members.find((x) => this.aliasOf(x) === alias);
+    this.check('aggregate.member', 'Aggregate: member alias', !!m, m ? 'the prefix is the alias of a member of this aggregate' : 'the prefix is not the alias of any member');
     if (!m) { this.deny('unknown_server', { user: user.id, aggregate: agg.id }); jerr('unknown_server', 404, -32600, 'unknown server: the prefix is not a member alias', { enforcedAt: 'aggregate', reason: 'unknown_server' }); }
     const g = this.grantsOf(agg.policy, user);
     // First enforcement, at the aggregate: the prefixed name must be in the aggregate's policy. A tool that does not exist gets the same refusal.
     if (!this.faults.aggregateSkipsCheck) {
+      this.check('aggregate.entitlement', 'Aggregate: tool in the aggregate policy (first enforcement)', this.permits(g.tools, name), this.permits(g.tools, name) ? 'the prefixed tool name is in an aggregate policy grant that matches the caller' : 'the prefixed tool name is not in the aggregate policy (a tool that does not exist gets the same refusal)');
       if (!this.permits(g.tools, name)) { this.deny('policy', { user: user.id, aggregate: agg.id, method: rpc.method, reason: 'not_in_aggregate_policy', enforcedAt: 'aggregate' }); jerr('access_denied', 403, -32600, 'access denied', { enforcedAt: 'aggregate', reason: 'not_in_aggregate_policy' }); }
+      if (m.toolFilter.Elems.length) this.check('aggregate.toolfilter', 'Aggregate: member tool filter', m.toolFilter.Elems.includes(bare), m.toolFilter.Elems.includes(bare) ? 'the tool is in the member\'s tool filter' : 'the tool is not in the member\'s tool filter');
       if (m.toolFilter.Elems.length && !m.toolFilter.Elems.includes(bare)) { this.deny('policy', { user: user.id, aggregate: agg.id, reason: 'filtered', enforcedAt: 'aggregate' }); jerr('not_exposed', 403, -32600, 'not exposed by this aggregate', { enforcedAt: 'aggregate', reason: 'tool_filter' }); }
-    }
+    } else this.check('aggregate.entitlement', 'Aggregate: first enforcement', true, 'the fault switch "aggregate skips its own check" is on, so the aggregate did not check the tool against its policy or a tool filter', 'info');
     this.hop('aggregate: first enforcement passed', { tool: '(namespaced)', alias }, { allowed: true });
     const app = this.resolve(m);
+    this.check('aggregate.resolve', 'Aggregate: member application exists', !!app, app ? 'the application the member refers to exists' : 'the application the member refers to does not exist');
     if (!app) { this.deny('member_missing', { user: user.id, aggregate: agg.id }); jerr('member_missing', 404, -32603, `${alias}: the member application does not exist`, { enforcedAt: 'aggregate (resolve)', memberState: 'missing' }); }
     if (app.kind === 'http') jerr('not_an_mcp_application', 400, -32603, `${alias}: not an MCP server`, { enforcedAt: 'aggregate' });
     // Second enforcement, at the member hop: the member's policy and the aggregate's cap (carried as the cap header) are applied again.

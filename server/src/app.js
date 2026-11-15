@@ -136,7 +136,7 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
       const cast = castFor(req);
       const r = runAction({ ws: id, workspaces, vertical, cast, op, params, traceparent: req.headers.traceparent, route, engine: mode === 'mock' ? new Engine(cast) : undefined });
       res.set('traceparent', r.traceparent);
-      const common = { workspace: id, mode, vertical, hops: r.hops, hopsTruncated: r.hopsTruncated, traceId: r.traceId, ...(mode === 'live' ? { state: r.state } : {}) };
+      const common = { workspace: id, mode, vertical, hops: r.hops, ...(r.gatewayTrace ? { trace: r.gatewayTrace } : {}), hopsTruncated: r.hopsTruncated, traceId: r.traceId, ...(mode === 'live' ? { state: r.state } : {}) };
       if (r.outcome.ok) return res.json({ ok: true, op, result: r.outcome.result, ...common });
       return res.status(r.outcome.status || 400).json({ ok: false, op, error: r.outcome.code, detail: r.outcome.detail, ...(r.outcome.data ? { data: r.outcome.data } : {}), ...common });
     } catch (e) { return next(e); }
