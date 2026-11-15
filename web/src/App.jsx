@@ -1,5 +1,6 @@
 import { Component, useCallback, useEffect, useRef, useState } from "react";
 import ShelfLink from "./components/ShelfLink";
+import VerifyMark from "./components/VerifyMark.jsx";
 import AggregateTab from "./components/AggregateTab";
 import DiscoveryTab from "./components/DiscoveryTab";
 import OpenapiTab from "./components/OpenapiTab";
@@ -165,6 +166,7 @@ export default function App() {
               onReset={reset}
             >
               <ShelfLink />
+              <VerifyMark id="mcp-surface-lab" />
             </TopMenu>
             <span className="chip" data-testid="mode">Mode: {mode || "..."}{mode === "live" ? " (local engine, loopback)" : mode === "mock" ? " (tables)" : ""}</span>
             {!presenter && mode === "live" && users.length > 0 && (
