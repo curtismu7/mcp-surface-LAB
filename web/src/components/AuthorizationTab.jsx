@@ -80,7 +80,7 @@ export default function AuthorizationTab({ story, mode, lab, actor, admin, scena
           <button type="button" disabled={ro || lab.busy || !refresh} onClick={doRefresh} data-testid="do-refresh">Refresh (rotates the pair)</button>
         </div>
         <Outcome last={lab.last} ops={["oauthToken"]} />
-        {tokens && <div data-testid="tokens"><p className="muted">Mock-issued tokens, shown raw (labelled mock; they open nothing).</p><Json value={tokens} label="token response" testId="token-json" /></div>}
+        {tokens && <div data-testid="tokens"><p className="muted">Mock-issued tokens, shown raw (labelled mock; they open nothing).</p><Json value={tokens} label="token response" testId="token-json" hot={["refresh_token", "expires_in", "token_type"]} /></div>}
         <p className="muted" data-testid="oauth-counts">Pending codes {o.pendingCodes}; live access tokens {o.liveAccessTokens}; live refresh tokens {o.liveRefreshTokens}; lab clock {visible(s.now)}. <button type="button" disabled={ro || lab.busy} onClick={() => lab.act("advance", { minutes: 1440 })} data-testid="advance-day">Advance one day</button></p>
       </section>
 
@@ -106,7 +106,7 @@ export default function AuthorizationTab({ story, mode, lab, actor, admin, scena
       <section className="panel" aria-label="Discovery metadata" data-testid="metadata">
         <h3 className="panel__sub">Published discovery metadata <SourceTag source="reading" label="client_id_metadata_document_supported: lab reading" /></h3>
         <p className="muted">It advertises S256 only, the two grants, dynamic registration and CIMD support, on reserved hosts.</p>
-        <Json value={o.metadata} label="discovery metadata" testId="metadata-json" tall />
+        <Json value={o.metadata} label="discovery metadata" testId="metadata-json" hot={["code_challenge_methods_supported", "client_id_metadata_document_supported", "authorization_servers"]} />
       </section>
       <FieldSources fields={story.fieldSources.filter((f) => FIELD_RE.test(f.field))} />
     </div>

@@ -119,7 +119,7 @@ export default function AggregateTab({ story, mode, lab, actor, admin, scenarioI
           <div className="pair" data-testid="call-result">
             <div>
               <h4>What the agent sees <span className="verdict" data-state={res.ok ? "ok" : "bad"} data-testid="verdict">{res.ok ? "allowed" : `refused (${res.body?.error}, HTTP ${res.status})`}</span></h4>
-              {rpc?.result?.tools ? <ul className="plain" data-testid="agent-tools">{rpc.result.tools.map((t) => <li key={t.name}><code>{visible(t.name)}</code>{t._meta?.unavailable ? <span className="tag" data-state="bad"> unavailable: {t._meta.unavailable}</span> : null}</li>)}</ul> : <Json value={rpc || { note: "no JSON-RPC body" }} label="JSON-RPC answer" testId="rpc" />}
+              {rpc?.result?.tools ? <ul className="plain" data-testid="agent-tools">{rpc.result.tools.map((t) => <li key={t.name}><code>{visible(t.name)}</code>{t._meta?.unavailable ? <span className="tag" data-state="bad"> unavailable: {t._meta.unavailable}</span> : null}</li>)}</ul> : <Json value={rpc || { note: "no JSON-RPC body" }} label="JSON-RPC answer" testId="rpc" hot={["isError", "code", "message", "enforcedAt", "scopedTo"]} />}
               {view?.wire && <p className="muted" data-testid="wire-note">HTTP on the wire: {view.wire.httpStatus}. {visible(view.wire.note || "")}</p>}
             </div>
             <div>
@@ -128,7 +128,7 @@ export default function AggregateTab({ story, mode, lab, actor, admin, scenarioI
                 <dt>Enforced at</dt><dd data-testid="enforced-at">{visible(view?.operator?.enforcedAt || view?.enforcedAt || "")}</dd>
                 {view?.reason && <><dt>Reason</dt><dd>{visible(view.reason)}</dd></>}
                 {view?.operator?.cap && <><dt>Cap sent to the hop</dt><dd><code>{visible(view.operator.cap.join(", "))}</code></dd></>}
-                {view?.operator?.connection && <><dt>Connection</dt><dd>{visible(JSON.stringify(view.operator.connection))}</dd></>}
+                {view?.operator?.connection && <><dt>Connection</dt><dd><Json value={view.operator.connection} label="connection" hot={["state", "connects", "lastError"]} /></dd></>}
                 {view?.operator?.backendIdentity && <><dt>Backend saw</dt><dd>{visible(view.operator.backendIdentity.actor)} ({view.operator.backendIdentity.kind})</dd></>}
                 {view?.measured && <><dt>Measured note</dt><dd>{visible(view.measured)}</dd></>}
               </dl>

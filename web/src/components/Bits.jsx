@@ -1,10 +1,9 @@
 import { useRef } from "react";
 import { visible } from "../safeText";
+import { Json } from "./JsonPane.jsx";
 
-// Raw JSON or text, rendered as text only (never markup). Control and bidi characters are shown as visible escapes.
-export function Json({ value, label, testId, tall }) {
-  return <pre className={`json${tall ? " json--tall" : ""}`} tabIndex={0} aria-label={label} data-testid={testId}>{visible(typeof value === "string" ? value : JSON.stringify(value, null, 2))}</pre>;
-}
+// Every JSON pane is the shared JsonPane (Rule 24, vendored byte-for-byte): Form | JSON, coloured by theme tokens, full view, text only through visible().
+export { Json };
 
 // Every product claim carries this tag. It is on every tab, and in presenter mode too.
 export function ClaimTag({ label }) {
@@ -23,6 +22,7 @@ const GOOD = new Set(["ok", "healthy", "connected", "approved", "authorized", "a
 const BAD = new Set(["missing", "unreachable", "unhealthy", "denied", "refused", "failed", "expired", "revoked", "exited", "hung", "fail"]);
 export const StatusTag = ({ status }) => <span className="tag" data-state={GOOD.has(status) ? "ok" : BAD.has(status) ? "bad" : "warn"} data-testid="status">{status}</span>;
 
+const HOP_HOT = ["traceparent", "enforcedAt", "unchanged", "verified", "defect", "target"];
 export function Hops({ hops, traceId, truncated }) {
   return (
     <details className="hops" data-testid="hops">
@@ -31,8 +31,8 @@ export function Hops({ hops, traceId, truncated }) {
       {hops.map((h) => (
         <div key={h.n}>
           <h4 className="hops__title">{h.n}. {h.label}</h4>
-          <Json value={h.request} label={`hop ${h.n} request`} />
-          <Json value={h.response} label={`hop ${h.n} response`} />
+          <Json value={h.request} label={`hop ${h.n} request`} hot={HOP_HOT} />
+          <Json value={h.response} label={`hop ${h.n} response`} hot={HOP_HOT} />
         </div>
       ))}
     </details>

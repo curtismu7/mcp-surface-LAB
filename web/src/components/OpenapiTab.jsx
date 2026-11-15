@@ -77,7 +77,7 @@ export default function OpenapiTab({ story, mode, lab, actor, admin, scenarioId,
           <ul className="plain" data-testid="auth-list">{prev.auth.length ? prev.auth.map((a) => <li key={a.scheme}><code>{visible(a.scheme)}</code>: {a.handled === "header" ? <>the gateway injects the <code>{visible(a.header)}</code> header</> : <>{visible(a.why)}</>}</li>) : <li>no security scheme declared</li>}</ul>
           {prev.notExposed.length > 0 && <p className="muted" data-testid="not-exposed">Not exposed as arguments: {prev.notExposed.map((n) => `${visible(n.tool)} (${n.in})`).join(", ")}.</p>}
           {prev.warnings.length > 0 && <p className="muted">Notes: {prev.warnings.map(visible).join("; ")}</p>}
-          <details><summary>Input schema of each tool</summary>{toolsShown.map((t) => <div key={t.name}><h4>{visible(t.name)}</h4><Json value={t.inputSchema} label={`schema of ${t.name}`} tall /></div>)}</details>
+          <details><summary>Input schema of each tool</summary>{toolsShown.map((t) => <div key={t.name}><h4>{visible(t.name)}</h4><Json value={t.inputSchema} label={`schema of ${t.name}`} hot={["required", "type"]} /></div>)}</details>
         </section>)}
 
       <section className="panel" aria-label="Deployed servers" data-testid="deployed">
@@ -104,9 +104,9 @@ export default function OpenapiTab({ story, mode, lab, actor, admin, scenarioId,
         {res && (
           <div className="pair" data-testid="oa-result">
             <div><h4>What the agent sees <span className="verdict" data-state={res.ok ? "ok" : "bad"}>{res.ok ? "allowed" : `refused (${res.body?.error}, HTTP ${res.status})`}</span></h4>
-              {view?.rpc?.result?.tools ? <ul className="plain" data-testid="oa-visible">{view.rpc.result.tools.map((t) => <li key={t.name}><code>{visible(t.name)}</code></li>)}</ul> : <Json value={view?.rpc ? view.rpc.result?.content?.[0]?.text ?? view.rpc : { note: "a bare 403" }} label="answer" testId="oa-answer" />}</div>
+              {view?.rpc?.result?.tools ? <ul className="plain" data-testid="oa-visible">{view.rpc.result.tools.map((t) => <li key={t.name}><code>{visible(t.name)}</code></li>)}</ul> : <Json value={view?.rpc ? view.rpc.result?.content?.[0]?.text ?? view.rpc : { note: "a bare 403" }} label="answer" testId="oa-answer" hot={["isError", "code", "message", "enforcedAt", "scopedTo"]} />}</div>
             <div><h4>What the backend received</h4>
-              {view?.operator?.credential ? <Json value={view.operator.credential} label="credential injection" testId="oa-cred" /> : <p className="muted">Nothing: the call was refused before the backend.</p>}</div>
+              {view?.operator?.credential ? <Json value={view.operator.credential} label="credential injection" testId="oa-cred" hot={["mode", "headers", "fingerprint"]} /> : <p className="muted">Nothing: the call was refused before the backend.</p>}</div>
           </div>)}
       </section>
       <FieldSources fields={story.fieldSources.filter((f) => FIELD_RE.test(f.field))} />

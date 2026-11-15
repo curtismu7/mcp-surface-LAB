@@ -84,7 +84,7 @@ export default function CredentialsTab({ story, mode, lab, actor, admin, scenari
             {result && (
               <div className="pair">
                 <div><h4>The assertion <span className="tag" data-state="none">{visible(result.mockTokenLabel)}</span></h4>
-                  <Json value={result.mockToken} label="mock-issued assertion" testId="mock-token" /><Json value={{ header: result.header, claims: result.claims, key: result.keyInfo }} label="decoded header and claims" testId="decoded" /></div>
+                  <Json value={result.mockToken} label="mock-issued assertion" testId="mock-token" /><Json value={{ header: result.header, claims: result.claims, key: result.keyInfo }} label="decoded header and claims" testId="decoded" hot={["alg", "jti", "exp"]} /></div>
                 <div><h4>What each side saw</h4>
                   <dl className="kv"><dt>The agent</dt><dd data-testid="agent-sees">{visible(result.agentSees.note)}</dd>
                     <dt>Gateway forwarded</dt><dd data-testid="unchanged">{result.unchanged ? "the same string the front end minted (digests equal; the mock gateway hands on what it received)" : "CHANGED"}</dd>

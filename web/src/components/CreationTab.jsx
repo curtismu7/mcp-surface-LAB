@@ -58,7 +58,7 @@ export default function CreationTab({ story, mode, lab, actor, admin, scenarioId
         <h3 className="panel__sub">Session logging <SourceTag source="deck" /></h3>
         <label className="check"><input type="checkbox" checked={s.sessionLogging} disabled={ro || lab.busy} onChange={(e) => lab.act("setSessionLogging", { actor: admin, enabled: e.target.checked })} data-testid="logging" />Record tool invocations and their arguments (arguments are masked if they look like a credential)</label>
         <div className="scroll"><table className="tbl tbl--wide" data-testid="recordings"><caption>Recorded invocations ({s.recordings.total})</caption><thead><tr><th>#</th><th>Who</th><th>Target</th><th>Tool</th><th>Arguments</th></tr></thead>
-          <tbody>{s.recordings.shown.length === 0 ? <tr><td colSpan={5}>Nothing recorded.</td></tr> : s.recordings.shown.map((r) => <tr key={r.n}><td>{r.n}</td><td>{visible(r.actor)}</td><td>{visible(r.target)}</td><td>{visible(r.tool || "")}</td><td className="mono">{visible(JSON.stringify(r.arguments))}</td></tr>)}</tbody></table></div>
+          <tbody>{s.recordings.shown.length === 0 ? <tr><td colSpan={5}>Nothing recorded.</td></tr> : s.recordings.shown.map((r) => <tr key={r.n}><td>{r.n}</td><td>{visible(r.actor)}</td><td>{visible(r.target)}</td><td>{visible(r.tool || "")}</td><td><Json value={r.arguments} label={`arguments of recording ${r.n}`} /></td></tr>)}</tbody></table></div>
       </section>
 
       <section className="panel" aria-label="Headless agents" data-testid="agents">
