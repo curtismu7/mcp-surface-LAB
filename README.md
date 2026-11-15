@@ -135,3 +135,19 @@ Every stated limit has a test with its literal number (`server/test/boundaries.t
 
 - Nothing is verified on a tenant: the release is not on our tenant. Re-diff the swagger and re-check the gateway image after 2026-11-02 before removing any UNVERIFIED label.
 - No SE k8s build (deferred by the owner). The repo is not pushed and has no GitHub repo or runner yet.
+
+---
+
+## Real mode: through the PingOne Privilege gateway
+
+Real mode here is one live call through the SE PingOne Privilege gateway
+(`https://mcpgw.ai-demo.ping-devops.com`) with an agent access key from the shared settings
+file (`~/Development/.env`, or the file `STANDALONE_ENV` names).
+
+**Privilege objects this lab uses:** the door (Agentic App) `aggregate-limited` — the gateway's
+MCP aggregate with a tool filter — at client path `/aggregate-limited/mcp`, called with the
+agent access key `MSF_GW_KEY_LAB_AGENT` (write-only, never shown). **What runs in Real:** the
+**Privilege gateway check** (`POST /api/gateway-check`): one live `tools/list` through the door,
+then one `tools/call` probe of a tool no policy grants, so you see the gateway's own refusal
+shape. The lab's own Live engine stays loopback-only; the gateway hop is the one outbound call.
+Settings keys: `MSF_GW_URL`, `MSF_GW_APPS`, `MSF_GW_KEY_<NAME>`.
