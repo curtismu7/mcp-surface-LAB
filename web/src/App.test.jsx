@@ -10,6 +10,7 @@ import App, { BANNER_UNKNOWN, TABS } from "./App";
 import { labelOffsets } from "./components/PatternDiagram";
 import { visible } from "./safeText";
 import { forgetWorkspace } from "./workspace";
+import { setJsonView } from "./components/JsonPane.jsx";
 
 const C = VERTICALS.finance;
 let server; let base; const realFetch = globalThis.fetch; let seen = []; let failDiagram = 0; // failDiagram: how many /api/diagram requests to abort (a dropped connection)
@@ -25,7 +26,7 @@ beforeAll(async () => {
   };
 });
 afterAll(async () => { globalThis.fetch = realFetch; await new Promise((r) => server.close(r)); });
-beforeEach(() => { cleanup(); forgetWorkspace(); seen = []; failDiagram = 0; try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ } window.location.hash = ""; realFetch(`${base}/api/mode`, { method: "POST", headers: { "content-type": "application/json", origin: base }, body: JSON.stringify({ source: "mock" }) }).catch(() => {}); });
+beforeEach(() => { cleanup(); forgetWorkspace(); setJsonView("form"); seen = []; failDiagram = 0; try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ } window.location.hash = ""; realFetch(`${base}/api/mode`, { method: "POST", headers: { "content-type": "application/json", origin: base }, body: JSON.stringify({ source: "mock" }) }).catch(() => {}); });
 
 // Every wait is on a STATE (an element enabled or a text present), never on a clock; the timeouts are generous hang guards because the suite runs at machine load 60-500.
 const T = { timeout: 120000 };

@@ -70,10 +70,10 @@ export default function CatalogTab({ story, mode, lab, actor, admin, scenarioId,
         {res && (
           <div className="pair" data-testid="cat-result">
             <div><h4>What the agent sees <span className="verdict" data-state={res.ok ? "ok" : "bad"}>{res.ok ? "allowed" : `refused (${res.body?.error}, HTTP ${res.status})`}</span></h4>
-              <Json value={view?.rpc?.result?.tools ? view.rpc.result.tools.map((t) => t.name) : view?.rpc?.result?.content?.[0]?.text ?? view?.rpc ?? { detail: res.body?.detail }} label="answer" testId="cat-answer" /></div>
+              <Json value={view?.rpc?.result?.tools ? view.rpc.result.tools.map((t) => t.name) : view?.rpc?.result?.content?.[0]?.text ?? view?.rpc ?? { detail: res.body?.detail }} label="answer" testId="cat-answer" hot={["isError", "code", "message", "enforcedAt", "scopedTo"]} /></div>
             <div><h4>What the operator sees</h4>
               <dl className="kv"><dt>Enforced at</dt><dd>{visible(view?.operator?.enforcedAt || view?.enforcedAt || "-")}</dd>
-                {view?.operator?.containerEnv && <><dt>Container environment</dt><dd data-testid="container-env">{visible(JSON.stringify(view.operator.containerEnv))}</dd></>}</dl></div>
+                {view?.operator?.containerEnv && <><dt>Container environment</dt><dd><Json value={view.operator.containerEnv} label="container environment" testId="container-env" hot={["namespace", "USER_VAULT_CREDENTIAL"]} /></dd></>}</dl></div>
           </div>)}
         <Outcome last={lab.last} ops={["catCrash", "catHealth", "catRedeploy", "catConfigure", "mcp"]} />
       </section>

@@ -60,7 +60,7 @@ export default function DiscoveryTab({ story, mode, lab, actor, admin, scenarioI
             </div>
             <div>
               <h4>What the agent receives <span className="verdict" data-state={res.ok ? "ok" : "bad"} data-testid="disc-verdict">{res.ok ? "allowed" : `refused (${res.body?.error}, HTTP ${res.status})`}</span></h4>
-              {listing ? <ul className="plain" data-testid="agent-list">{listing.map((n) => <li key={n.name || n.uri}><code>{visible(n.name || n.uri)}</code></li>)}</ul> : <Json value={rpc || { note: "a bare 403: no JSON-RPC body" }} label="answer" testId="disc-rpc" />}
+              {listing ? <ul className="plain" data-testid="agent-list">{listing.map((n) => <li key={n.name || n.uri}><code>{visible(n.name || n.uri)}</code></li>)}</ul> : <Json value={rpc || { note: "a bare 403: no JSON-RPC body" }} label="answer" testId="disc-rpc" hot={["isError", "code", "message", "enforcedAt", "scopedTo"]} />}
               {view?.wire && <p className="muted" data-testid="disc-wire">HTTP {view.wire.httpStatus}. {visible(view.wire.note || "")}</p>}
               {view?.reason && <p className="muted" data-testid="disc-reason">Operator-only reason: <code>{visible(view.reason)}</code> (the agent cannot tell a hidden tool from one that does not exist).</p>}
               {view?.operator?.log?.length > 0 && <div data-testid="gateway-log"><h4>Gateway log <SourceTag source="measured" label="line wording: measured (AI-DEMO2 note)" /></h4><ul className="plain">{view.operator.log.map((l, i) => <li key={i}><code>{visible(l)}</code></li>)}</ul></div>}
