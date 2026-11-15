@@ -257,3 +257,32 @@ describe("helpers", () => {
     expect(t).toHaveTextContent(/Why it matters: MCP Aggregate \(slide 37\)/); expect(t).toHaveTextContent(/Ping claims, unverified on our tenant/);
   });
 });
+
+describe("What Privilege did (Rule 25)", () => {
+  it("Run shows the panel under the Last action: nothing before a call, then the request, the answer and the decisions, all checked and simulated", async () => {
+    setJsonView("raw"); // the request and the answer are one text each in the raw view (the panes' own default for tests)
+    await mount(); await live();
+    expect(screen.queryByTestId("gateway-trace")).toBeNull(); // no call yet: nothing that could mislead
+    await click("preset-agg-denies"); await click("call-tool");
+    const panel = await screen.findByTestId("gateway-trace", {}, T);
+    expect(panel).toHaveTextContent("What Privilege did");
+    expect(screen.getByTestId("gateway-trace-basis")).toHaveTextContent(/Simulated/);
+    expect(screen.getByTestId("gateway-trace-note")).toHaveTextContent(/Real means its own local engine/);
+    const list = screen.getByTestId("trace-1-decisions");
+    expect(list).toHaveTextContent(/Aggregate: tool in the aggregate policy/); expect(list).toHaveTextContent("FAIL");
+    expect(screen.getByTestId("trace-1")).toHaveTextContent("refused at: Aggregate: tool in the aggregate policy");
+    expect(screen.getByTestId("trace-1-request-box")).toHaveTextContent("https://gateway.example.invalid/");
+    expect(screen.getByTestId("trace-1-request-box")).toHaveTextContent("payments__create_item");
+    // the Last action panel is still there and the panel sits after it
+    const last = screen.getByTestId("last-action");
+    expect(last.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // a later action that makes no gateway call takes the panel away rather than leave a stale one
+    await click("fault-agg");
+    await waitFor(() => expect(screen.queryByTestId("gateway-trace")).toBeNull(), T);
+  });
+
+  it("Mock mode, which cannot call, draws no panel", async () => {
+    await mount(); await tab("Aggregate");
+    expect(screen.queryByTestId("gateway-trace")).toBeNull();
+  });
+});

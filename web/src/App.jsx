@@ -11,6 +11,7 @@ import CreationTab from "./components/CreationTab";
 import DiagramTab from "./components/DiagramTab";
 import TalkTrack from "./components/TalkTrack";
 import LastAction from "./components/LastAction";
+import GatewayTracePanel from "./components/GatewayTracePanel";
 import { ClaimTag } from "./components/Bits";
 import useLab from "./hooks/useLab";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
@@ -207,6 +208,7 @@ export default function App() {
               {tab === "diagram" && <DiagramTab vertical={vertical} resetSignal={resetSignal} />}
               {tab === "talk" && <TalkTrack talk={story.talkTrack} />}
               {mode === "live" && ACTION_TABS.includes(tab) && <LastAction last={lab.last} />}
+              {mode === "live" && ACTION_TABS.includes(tab) && <GatewayTracePanel last={lab.last} />}
             </>
           )}
         </div>
