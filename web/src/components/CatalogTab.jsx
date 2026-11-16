@@ -38,7 +38,7 @@ export default function CatalogTab({ story, mode, lab, actor, admin, scenarioId,
               <td><div className="row"><label>Name<input value={nameFor(e)} maxLength={32} onChange={(ev) => setNames((n) => ({ ...n, [e.id]: ev.target.value }))} data-testid={`name-${e.id}`} autoComplete="off" /></label>
                 <button type="button" disabled={ro || lab.busy} onClick={() => lab.act("catDeploy", { actor: admin, entryId: e.id, name: nameFor(e), tenant: tn })} data-testid={`deploy-${e.id}`}>Deploy</button></div></td></tr>))}</tbody></table></div>
         <div className="row">
-          <button type="button" disabled={ro || lab.busy} onClick={() => lab.act("catPublish", { actor: admin })} data-testid="publish">Publish my own entry</button>
+          <button type="button" className="primary" disabled={ro || lab.busy} onClick={() => lab.act("catPublish", { actor: admin })} data-testid="publish">Publish my own entry</button>
           <span className="tag" data-state="bad" data-testid="roadmap-tag">roadmap</span><SourceTag source="deck" label="customer-published entries: on the roadmap (deck claim), nothing modelled" />
         </div>
         <Outcome last={lab.last} ops={["catDeploy", "catPublish"]} />

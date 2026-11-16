@@ -1,6 +1,6 @@
 // These tests drive the real UI against the real Express app (started on a loopback port inside the test), so a green run means the pieces actually work together.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createApp, startHttpServer } from "../../server/src/app.js";
 import { createHealth } from "../../server/src/health.js";
@@ -31,7 +31,7 @@ beforeEach(() => { cleanup(); forgetWorkspace(); setJsonView("form"); seen = [];
 // Every wait is on a STATE (an element enabled or a text present), never on a clock; the timeouts are generous hang guards because the suite runs at machine load 60-500.
 const T = { timeout: 120000 };
 const mount = async () => { render(<App />); await screen.findByTestId("members", {}, T); };
-const tab = (name) => userEvent.click(screen.getByRole("tab", { name }));
+const tab = (name) => userEvent.click(within(screen.getByRole("navigation", { name: "Lab sections" })).getByRole("link", { name }));
 const click = async (id) => { await waitFor(() => expect(screen.getByTestId(id)).toBeEnabled(), T); await userEvent.click(screen.getByTestId(id)); };
 const live = async () => { await fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "real" } }); await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/LIVE mode/), T); await screen.findByTestId("actor", {}, T); await waitFor(() => expect(screen.getByTestId("list-tools")).toBeEnabled(), T); };
 const setValue = (id, value) => fireEvent.change(screen.getByTestId(id), { target: { value } });
@@ -42,9 +42,14 @@ describe("shell", () => {
     expect(TABS.map((t) => t.id)).toEqual(["aggregate", "discovery", "openapi", "credentials", "catalog", "authorization", "creation", "diagram", "talk"]);
     expect(BANNER_UNKNOWN).toMatch(/UNVERIFIED on our tenant/);
     await mount();
+    // shell bar first, then main with the banner as its first child (STANDALONE-UI-PATTERNS sections 1 and 2)
+    expect(document.querySelector(".app").firstElementChild.matches("header.shell-bar")).toBe(true);
+    expect(document.querySelector("main").firstElementChild).toBe(screen.getByTestId("banner"));
     for (const t of TABS) {
       await tab(t.label);
       await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/MOCK mode.*UNVERIFIED on our tenant/), T);
+      expect(within(screen.getByRole("navigation", { name: "Lab sections" })).getByRole("link", { name: t.label })).toHaveAttribute("aria-current", "page");
+      expect(document.querySelector("main").firstElementChild).toBe(screen.getByTestId("banner"));
     }
     await tab("Aggregate"); await userEvent.keyboard("p");
     expect(screen.getByTestId("banner")).toHaveTextContent(/UNVERIFIED on our tenant/);
@@ -195,7 +200,7 @@ describe("vertical switch", () => {
           for (const v of ["health", "retail", "finance"]) {
             await pick("vertical-select", v);
             await waitFor(() => expect(screen.getByTestId("vertical-select").value).toBe(v), T);
-            await waitFor(() => expect(document.querySelector("[role=tabpanel]").textContent.length).toBeGreaterThan(50), T);
+            await waitFor(() => expect(document.querySelector("main [id^=panel-]").textContent.length).toBeGreaterThan(50), T);
             expect(screen.queryByTestId("tab-error")).toBeNull();
           }
         }

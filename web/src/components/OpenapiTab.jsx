@@ -51,7 +51,7 @@ export default function OpenapiTab({ story, mode, lab, actor, admin, scenarioId,
         <label>OpenAPI document (JSON)<textarea value={text} rows={14} maxLength={40000} spellCheck="false" onChange={(e) => setText(e.target.value)} data-testid="spec" /></label>
         <div className="row">
           <button type="button" onClick={() => setText(story.sampleSpec)} data-testid="load-sample">Load the sample</button>
-          <button type="button" disabled={lab.busy} onClick={preview} data-testid="preview">Generate the tools (preview)</button>
+          <button type="button" className="primary" disabled={lab.busy} onClick={preview} data-testid="preview">Generate the tools (preview)</button>
           <label>Name for the application<input value={name} maxLength={32} onChange={(e) => setName(e.target.value)} data-testid="oa-name" autoComplete="off" /></label>
           <button type="button" disabled={ro || lab.busy || !name} onClick={deploy} data-testid="deploy">Deploy as an MCP application</button>
           <button type="button" disabled={ro || lab.busy || !cur} onClick={redeploy} data-testid="redeploy">Redeploy {cur ? visible(cur.appId) : ""} from this text</button>

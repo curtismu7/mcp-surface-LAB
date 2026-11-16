@@ -55,7 +55,7 @@ export default function AuthorizationTab({ story, mode, lab, actor, admin, scena
         <div className="row">
           <label>Client name<input value={clientName} maxLength={60} onChange={(e) => setClientName(e.target.value)} data-testid="client-name" autoComplete="off" /></label>
           <label className="grow">Redirect URI (https on a .example host, or loopback http)<input value={redirect} maxLength={200} onChange={(e) => setRedirect(e.target.value)} data-testid="redirect" autoComplete="off" /></label>
-          <button type="button" disabled={ro || lab.busy} onClick={register} data-testid="register">Register</button>
+          <button type="button" className="primary" disabled={ro || lab.busy} onClick={register} data-testid="register">Register</button>
         </div>
         <Outcome last={lab.last} ops={["oauthRegister"]} />
         <h3 className="panel__sub">2. Authorize, with PKCE</h3>

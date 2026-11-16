@@ -42,7 +42,7 @@ export default function CredentialsTab({ story, mode, lab, actor, admin, scenari
           <label>Authentication mode<select value={app.authMode} disabled={ro || lab.busy} onChange={(e) => lab.act("setAuth", { actor: admin, appId: app.id, authMode: e.target.value })} data-testid="cred-mode">{story.authModes.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
           <label>Header the credential travels in<select value={app.staticHeader} disabled={ro || lab.busy} onChange={(e) => lab.act("setAuth", { actor: admin, appId: app.id, staticHeader: e.target.value })} data-testid="cred-header">{["Authorization", "X-Api-Key"].map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
           <label>Call as<select value={who} onChange={(e) => setUser(e.target.value)} data-testid="cred-user">{s.users.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}</select></label>
-          <button type="button" disabled={ro || lab.busy} onClick={tryCall} data-testid="cred-call">Call a tool and record the result</button>
+          <button type="button" className="primary" disabled={ro || lab.busy} onClick={tryCall} data-testid="cred-call">Call a tool and record the result</button>
         </div>
         <p className="muted" data-testid="mode-text">{MODE_TEXT[app.authMode]}</p>
         <Outcome last={lab.last} ops={["setAuth", "mcp"]} />

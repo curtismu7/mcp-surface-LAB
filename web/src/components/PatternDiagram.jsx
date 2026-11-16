@@ -99,7 +99,7 @@ function Controls2({ stepper, onReset, caption }) {
             {STEP_TIME_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
-        {!active ? <button type="button" onClick={stepper.simulate} data-testid="simulate">Simulate</button> : (
+        {!active ? <button type="button" className="primary" onClick={stepper.simulate} data-testid="simulate">Simulate</button> : (
           <>
             <button type="button" onClick={stepper.prev} disabled={!paused}>Prev</button>
             {paused ? <button type="button" onClick={stepper.resume}>Resume</button> : <button type="button" onClick={stepper.pause}>Pause</button>}

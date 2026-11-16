@@ -24,8 +24,8 @@ beforeEach(() => { cleanup(); forgetWorkspace(); shelf = null; try { window.loca
 
 const T = { timeout: 120000 };
 const mark = (status, label, extra = {}) => ({ status, label, note: "", updatedAt: "2026-11-15", source: "shipped", ...extra });
-// the header renders before the app has loaded: wait for the tab list, then query the top menu
-const bar = async () => { await screen.findByRole("tablist", {}, T); return within(screen.getByTestId("top-menu")); };
+// the header renders before the app has loaded: wait for the section nav, then query the top menu
+const bar = async () => { await screen.findByRole("navigation", { name: "Lab sections" }, T); return within(screen.getByTestId("top-menu")); };
 
 describe("verification mark in the header", () => {
   it("shows this lab's own mark beside the Shelf link, and no other lab's, with the note as its tooltip", async () => {
