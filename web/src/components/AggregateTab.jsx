@@ -98,7 +98,7 @@ export default function AggregateTab({ story, mode, lab, actor, admin, scenarioI
       <section className="panel" aria-label="Call through the aggregate" data-testid="call-panel">
         <h3 className="panel__sub">Call through the aggregate as {visible(actor)}</h3>
         <div className="row">
-          <button type="button" disabled={ro || lab.busy} onClick={() => call("tools/list", {})} data-testid="list-tools">List tools</button>
+          <button type="button" className="primary" disabled={ro || lab.busy} onClick={() => call("tools/list", {})} data-testid="list-tools">List tools</button>
           <label>Wire style of the member hop (when a member is called)<select value={style} onChange={(e) => setStyle(e.target.value)} data-testid="style">{story.styles.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
         </div>
         <div className="scenario" role="group" aria-label="Presets">

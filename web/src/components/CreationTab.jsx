@@ -34,7 +34,7 @@ export default function CreationTab({ story, mode, lab, actor, admin, scenarioId
           <label className="grow">Backend (https on a .example host)<input value={f.backend} maxLength={150} onChange={set("backend")} data-testid="p-backend" autoComplete="off" /></label>
           <label>Authentication mode<select value={f.authMode} onChange={set("authMode")} data-testid="p-auth">{cr.authModes.map((k) => <option key={k} value={k}>{k}</option>)}</select></label>
           <label className="grow">Note<input value={f.note} maxLength={200} onChange={set("note")} data-testid="p-note" autoComplete="off" /></label>
-          <button type="button" disabled={ro || lab.busy} onClick={propose} data-testid="propose">Propose</button>
+          <button type="button" className="primary" disabled={ro || lab.busy} onClick={propose} data-testid="propose">Propose</button>
         </div>
         <Outcome last={lab.last} ops={["propose", "decide", "amend"]} />
         <div className="scroll"><table className="tbl tbl--wide" data-testid="proposals">

@@ -41,7 +41,7 @@ export default function DiscoveryTab({ story, mode, lab, actor, admin, scenarioI
         <div className="row">
           <label>Application<select value={app.id} onChange={(e) => { setAppId(e.target.value); setRes(null); }} data-testid="disc-app">{mcpApps.map((a) => <option key={a.id} value={a.id}>{a.id}</option>)}</select></label>
           <label>Upstream wire<select value={style} onChange={(e) => setStyle(e.target.value)} data-testid="disc-style">{story.styles.map((x) => <option key={x} value={x}>{x === "sse" ? "sse (event stream, chunked)" : x === "gzip-sse" ? "gzip-sse (compressed stream)" : x}</option>)}</select></label>
-          {KINDS.map(([k, label]) => <button key={k} type="button" disabled={ro || lab.busy} onClick={() => list(k)} data-testid={`list-${k}`}>List {label.toLowerCase()}</button>)}
+          {KINDS.map(([k, label]) => <button key={k} type="button" className={k === "tools" ? "primary" : undefined} disabled={ro || lab.busy} onClick={() => list(k)} data-testid={`list-${k}`}>List {label.toLowerCase()}</button>)}
         </div>
         <div className="row">
           <label>Call a tool by name<input list="disc-tools" value={tool} maxLength={60} onChange={(e) => setTool(e.target.value)} data-testid="disc-tool" autoComplete="off" /></label>
