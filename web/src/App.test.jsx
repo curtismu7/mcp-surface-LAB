@@ -266,8 +266,10 @@ describe("What Privilege did (Rule 25)", () => {
     await click("preset-agg-denies"); await click("call-tool");
     const panel = await screen.findByTestId("gateway-trace", {}, T);
     expect(panel).toHaveTextContent("What Privilege did");
-    expect(screen.getByTestId("gateway-trace-basis")).toHaveTextContent(/Simulated/);
-    expect(screen.getByTestId("gateway-trace-note")).toHaveTextContent(/Real means its own local engine/);
+    // basisNote replaces the shared sentence: the lab's own wording is shown, and the default "Real mode shows the actual gateway" is not
+    expect(screen.getByTestId("gateway-trace-basis")).toHaveTextContent(/Real means its own local engine, not a Ping gateway/);
+    expect(screen.getByTestId("gateway-trace-basis")).not.toHaveTextContent(/shows the actual gateway/);
+    expect(screen.queryByTestId("gateway-trace-note")).toBeNull();
     const list = screen.getByTestId("trace-1-decisions");
     expect(list).toHaveTextContent(/Aggregate: tool in the aggregate policy/); expect(list).toHaveTextContent("FAIL");
     expect(screen.getByTestId("trace-1")).toHaveTextContent("refused at: Aggregate: tool in the aggregate policy");
