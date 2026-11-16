@@ -82,7 +82,9 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .app--presenter .json, .app--presenter .tbl { font-size: 15px; }
 .pat__title { margin: 0 0 4px; font-size: 18px; }
 /* The diagram picker is a choice, not an action: its pressed option is a selected chip (accent outline, normal text), so Simulate stays the one red primary on this view. */
-.seg[aria-label="Diagram"] > button[aria-pressed="true"] { background: var(--surface); color: var(--text); border: 2px solid var(--accent); }
+/* The red border is 5.5:1 on the light surface but 2.95:1 on the dark one, so the shared --primary-edge (transparent in light,
+   5.9:1 in dark) draws a 1px ring inside it, as button.primary does with its edge. */
+.seg[aria-label="Diagram"] > button[aria-pressed="true"] { background: var(--surface); color: var(--text); border: 2px solid var(--accent); box-shadow: inset 0 0 0 1px var(--primary-edge); }
 .pat { display: grid; gap: 8px; min-width: 0; }
 .dstep__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .dstep__caption { margin: 6px 0; font-size: 13px; }
