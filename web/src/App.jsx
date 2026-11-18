@@ -15,6 +15,7 @@ import GatewayTracePanel from "./components/GatewayTracePanel";
 import { ClaimTag } from "./components/Bits";
 import useLab from "./hooks/useLab";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
+import TalkTrackDialog from "./talk-track/TalkTrackDialog.jsx";
 import { getJson, resetWorkspace, setMode } from "./api";
 
 import fs from "node:fs";
@@ -53,6 +54,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [tab, setTab] = useState(tabFromHash());
   const [presenter, setPresenter] = useState(false);
+  const [talkOpen, setTalkOpen] = useState(false);
   const [resetSignal, setResetSignal] = useState(0);
   const [resetMsg, setResetMsg] = useState("");
   const [actorChoice, setActor] = useState("");
@@ -142,6 +144,7 @@ export default function App() {
           theme={{ value: theme, onChange: pickTheme }}
           fontSize={{ value: fontStep, onChange: setFontStep }}
           present={{ active: presenter, onToggle: () => setPresenter((v) => !v), label: "Presenter (P)" }}
+          talkTrack={{ active: talkOpen, onToggle: () => setTalkOpen((v) => !v) }}
           help={{ href: "https://github.com/curtismu7/mcp-surface-LAB#readme" }}
           version={LAB_VERSION}
           onReset={reset}
@@ -191,6 +194,8 @@ export default function App() {
           )}
         </div>
       </main>
+
+      <TalkTrackDialog isOpen={talkOpen} onClose={() => setTalkOpen(false)} talk={story?.talkTrack ?? []} />
     </div>
   );
 }
