@@ -32,7 +32,7 @@ input[type="checkbox"] { width: 20px; height: 20px; min-height: 0; accent-color:
 textarea { width: 100%; display: block; font-family: var(--font-mono); font-size: 13px; margin: 4px 0 8px; }
 .stack { display: grid; gap: 12px; min-width: 0; }
 .stack > * { min-width: 0; }
-.cols { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; }
+.cols { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .cols > * { min-width: 0; }
 .panel { border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 12px 14px; min-width: 0; }
 .panel[data-state="warn"] { border-color: var(--status-warn); }
@@ -64,8 +64,9 @@ textarea { width: 100%; display: block; font-family: var(--font-mono); font-size
 .tbl td[data-state="ok"] { border-left: 4px solid var(--status-ok); }
 .tbl td[data-state="warn"] { border-left: 4px solid var(--status-warn); }
 .tbl td[data-state="none"] { border-left: 4px solid var(--danger-text); }
-.filters { display: grid; gap: 8px 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); align-items: end; margin: 8px 0; }
+.filters { display: grid; gap: 8px 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; margin: 8px 0; }
 .filters > * { min-width: 0; }
+@media (max-width: 900px) { .filters { grid-template-columns: minmax(0, 1fr); } }
 .filters select, .filters input { width: 100%; }
 .qualifier { margin: 6px 0 0; color: var(--text); }
 .tbl td[data-state="bad"] { border-left: 4px solid var(--danger-text); }
@@ -113,8 +114,9 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .tag { margin: 2px 4px 2px 0; }
 
 /* MCP Surface LAB additions: layout only, tokens only. */
-.pair { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); align-items: start; }
+.pair { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .pair > * { min-width: 0; }
+@media (max-width: 900px) { .pair { grid-template-columns: minmax(0, 1fr); } }
 .checks { display: grid; gap: 4px 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); margin: 6px 0; }
 .checks label { margin: 0; font-weight: 500; display: flex; gap: 6px; align-items: center; }
 .checks__box { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
