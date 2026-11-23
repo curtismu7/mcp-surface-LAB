@@ -37,11 +37,14 @@ export default function useLab({ mode, vertical, scenario }) {
       if (mine === actSeq.current && key === ctx.current) {
         seq.current += 1; // a load that started before this action must not overwrite its newer state
         if (r.body?.state) setData((d) => ({ ...(d || {}), mode, vertical, state: r.body.state }));
-        setLast({ ok: r.ok && r.body?.ok !== false, status: r.status, op, error: r.body?.error, detail: r.body?.detail, data: r.body?.data, result: r.body?.result, hops: r.body?.hops || [], trace: r.body?.trace || null, traceId: r.body?.traceId, truncated: r.body?.hopsTruncated, route: `POST /api/act/${op}`, at: Date.now() });
+        setLast({ ok: r.ok && r.body?.ok !== false, status: r.status, op, error: r.body?.error, detail: r.body?.detail, data: r.body?.data, result: r.body?.result, hops: r.body?.hops || [], trace: r.body?.trace || null, runId: r.body?.runId || null, runLogFailed: r.body?.runLogFailed === true, traceId: r.body?.traceId, truncated: r.body?.hopsTruncated, route: `POST /api/act/${op}`, at: Date.now() });
       }
       return r;
     } finally { inflight.current -= 1; if (inflight.current === 0) setBusy(false); }
   }, [mode, vertical]);
 
-  return { data, state: data?.state || null, scenario: data?.scenario || null, scenarios: data?.scenarios || [], error, busy, last, act, reload: load, readOnly: mode !== "live" };
+  // Reset clears what the last action showed (its trace, its hops, its run record): a run is gone with the workspace it was made in.
+  const clearLast = useCallback(() => setLast(null), []);
+
+  return { data, state: data?.state || null, scenario: data?.scenario || null, scenarios: data?.scenarios || [], error, busy, last, act, clearLast, reload: load, readOnly: mode !== "live" };
 }

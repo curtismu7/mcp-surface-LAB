@@ -6,6 +6,7 @@ import { VERTICALS } from './cast.js';
 import { perform } from './actions.js';
 import { s256 } from './oauth.js';
 import { sampleSpec } from './world.js';
+import { hasDecision } from './runObs.js';
 
 // The RFC 7636 appendix B example verifier (assembled so no key-shaped string sits in the source).
 export const PKCE_VERIFIER = ['dBjftJeZ4CVP-mB92K27uhbUJU1p1r_', 'wW1gFWFOEjXk'].join('');
@@ -230,7 +231,7 @@ export function runScenario(cast, sc) {
     const params = stepParams(st, prev);
     const r = perform(e, st.op, params);
     prev.push(r);
-    return { say: st.say, op: st.op, result: r };
+    return { say: st.say, op: st.op, result: r, events: e.lastRunKept ? e.lastRun : null };
   });
   return { engine: e, steps };
 }
@@ -242,7 +243,9 @@ export function buildMockTable() {
     verticals[v] = {
       scenarios: scenarioList(cast).map((sc) => {
         const { engine, steps } = runScenario(cast, sc);
-        return { id: sc.id, title: sc.title, say: sc.say, steps: steps.map((s) => ({ say: s.say, op: s.op, ok: s.result.ok, code: s.result.ok ? null : s.result.code, detail: s.result.ok ? null : s.result.detail })), state: engine.snapshot() };
+        // The decisions the engine took, step by step, stored once here for the run record Mock shows (a step that only looked a user up decided nothing, and is left out).
+        const events = steps.flatMap((s, i) => (hasDecision(s.events) ? s.events.map((ev) => ({ n: i + 1, ...ev })) : []));
+        return { id: sc.id, title: sc.title, say: sc.say, steps: steps.map((s) => ({ say: s.say, op: s.op, ok: s.result.ok, code: s.result.ok ? null : s.result.code, detail: s.result.ok ? null : s.result.detail })), ...(events.length ? { run: { events } } : {}), state: engine.snapshot() };
       }),
     };
   }

@@ -9,10 +9,10 @@ import { VERTICALS } from '../src/cast.js';
 export const C = VERTICALS.finance;
 export const newEngine = (cast = C, opts) => new Engine(cast, opts);
 
-export async function withServer(fn, { configFile = '/nonexistent/customer.config.json', workspaces = createWorkspaces(), webDist = '/nonexistent/dist', env, proxyHosts } = {}) {
+export async function withServer(fn, { configFile = '/nonexistent/customer.config.json', workspaces = createWorkspaces(), webDist = '/nonexistent/dist', env, proxyHosts, log } = {}) {
   const health = createHealth({ runChecks: async () => [], intervalMs: 3_600_000 });
   await health.ready;
-  const { server, url } = await startHttpServer({ port: 0, host: '127.0.0.1', app: createApp({ health, configFile, workspaces, webDist, ...(env ? { env } : {}), ...(proxyHosts ? { proxyHosts } : {}) }) });
+  const { server, url } = await startHttpServer({ port: 0, host: '127.0.0.1', app: createApp({ health, configFile, workspaces, webDist, ...(env ? { env } : {}), ...(proxyHosts ? { proxyHosts } : {}), ...(log ? { log } : {}) }) });
   try { await fn(url.replace(/\/$/, ''), { workspaces }); } finally { health.stop(); await new Promise((res) => server.close(res)); }
 }
 

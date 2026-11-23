@@ -50,6 +50,7 @@ export const creationOps = {
     const q = { id: `prop-${String(++this.pn).padStart(4, '0')}`, proposer: who.id, ...f, note: cleanFree(p.note ?? '', 200), state: 'pending', revision: 1, createdAt: this.t, decidedBy: null, decidedAt: null, reason: '', adjustments: [], createdApp: null };
     this.proposals.push(q);
     this.record('proposal.created', { actor: who.id, proposal: q.id });
+    this.observe('privilege', 'proposal', 'info', `${who.id} proposed the ${q.kind} application ${q.name} as ${q.id}. Nothing is created until an administrator approves: the decision waits for an approver.`, { proposal: q.id, revision: q.revision });
     return this.propView(q);
   },
   // The proposer changes their own pending proposal: the revision moves, so an approval of the version the administrator looked at is stale.
@@ -72,14 +73,17 @@ export const creationOps = {
     const a = this.admin(p.actor); const q = this.prop(p.proposalId);
     if (p.decision !== 'approve' && p.decision !== 'deny') throw refuse('bad_decision', 'decision is approve or deny');
     if (p.decision === 'deny' && p.adjust !== undefined) throw refuse('adjust_on_deny', 'a denial carries no adjustment: adjust only goes with an approval', 400);
-    if (q.proposer === a.id) { this.deny('self_approval', { actor: a.id, proposal: q.id }); throw refuse('self_approval', 'nobody decides their own proposal', 403); }
-    if (q.state === 'denied') { this.deny('approve_after_deny', { actor: a.id, proposal: q.id }); throw refuse(p.decision === 'approve' ? 'approve_after_deny' : 'already_decided', p.decision === 'approve' ? 'a denied proposal cannot be approved: propose again' : 'the proposal was already decided', 409); }
-    if (q.state !== 'pending') throw refuse(q.state === 'expired' ? 'proposal_stale' : 'already_decided', q.state === 'expired' ? 'the proposal expired' : 'the proposal was already decided', 409);
+    if (q.proposer === a.id) { this.observe('privilege', 'approval', 'refused', `${a.id} cannot decide ${q.id}: nobody decides their own proposal.`, { proposal: q.id }); this.deny('self_approval', { actor: a.id, proposal: q.id }); throw refuse('self_approval', 'nobody decides their own proposal', 403); }
+    if (q.state === 'denied') { this.observe('privilege', 'approval', 'refused', `${q.id} was already denied, and a denied proposal cannot be decided again: propose again.`, { proposal: q.id }); this.deny('approve_after_deny', { actor: a.id, proposal: q.id }); throw refuse(p.decision === 'approve' ? 'approve_after_deny' : 'already_decided', p.decision === 'approve' ? 'a denied proposal cannot be approved: propose again' : 'the proposal was already decided', 409); }
+    if (q.state !== 'pending') { // a repeat decision is refused the same way whatever the first answer was (a denied proposal has its own audit entry above)
+      this.observe('privilege', 'approval', 'refused', `${q.id} is ${q.state}, and only a pending proposal can be decided.`, { proposal: q.id, state: q.state });
+      throw refuse(q.state === 'expired' ? 'proposal_stale' : 'already_decided', q.state === 'expired' ? 'the proposal expired' : 'the proposal was already decided', 409);
+    }
     if (this.t - q.createdAt > PROPOSAL_TTL) { q.state = 'expired'; this.record('proposal.expired', { proposal: q.id }); throw refuse('proposal_stale', 'the proposal is older than 7 days on the lab clock and has expired', 409); }
-    if (p.revision !== q.revision) { this.deny('stale_revision', { actor: a.id, proposal: q.id }); throw refuse('stale_revision', 'the proposal changed after you looked at it: review the new revision', 409); }
+    if (p.revision !== q.revision) { this.observe('privilege', 'approval', 'refused', `${a.id} decided revision ${typeof p.revision === 'number' ? p.revision : '(not a number)'} of ${q.id}, but it is now revision ${q.revision}: the proposal changed after the approver looked at it.`, { proposal: q.id, revision: q.revision }); this.deny('stale_revision', { actor: a.id, proposal: q.id }); throw refuse('stale_revision', 'the proposal changed after you looked at it: review the new revision', 409); }
     this.assertRoom();
     const reason = cleanFree(p.reason ?? '', 200);
-    if (p.decision === 'deny') { q.state = 'denied'; q.decidedBy = a.id; q.decidedAt = this.t; q.reason = reason; this.record('proposal.denied', { actor: a.id, proposal: q.id }); return this.propView(q); }
+    if (p.decision === 'deny') { this.observe('privilege', 'approval', 'refused', `${a.id} denied ${q.id} (revision ${q.revision}). Nothing is created.`, { proposal: q.id, revision: q.revision }); q.state = 'denied'; q.decidedBy = a.id; q.decidedAt = this.t; q.reason = reason; this.record('proposal.denied', { actor: a.id, proposal: q.id }); return this.propView(q); }
     // Approve: the administrator may adjust the configuration; every value is validated again now.
     const adj = p.adjust === undefined ? {} : this.checkProposalFields(take(p.adjust, ['kind', 'name', 'backend', 'authMode']), { requireAll: false });
     const merged = { kind: q.kind, name: q.name, backend: q.backend, authMode: q.authMode, ...adj };
@@ -91,6 +95,7 @@ export const creationOps = {
     this.apps[merged.name] = { id: merged.name, name: merged.name, kind: merged.kind === 'http' ? 'http' : 'created', source: 'approved proposal', upstream: null, up: true, transport: 'streamable-http', authMode: merged.authMode, staticHeader: 'Authorization', entryPath: `/${merged.name}/mcp`, backend: merged.backend, tools, prompts: [], resources: [], generation: 1, policy: { grants: [{ group: 'admins', tools: ['*'], prompts: [], resources: [] }] } };
     q.state = 'approved'; q.decidedBy = a.id; q.decidedAt = this.t; q.reason = reason; q.createdApp = merged.name;
     this.record('proposal.approved', { actor: a.id, proposal: q.id, app: merged.name, adjustments: q.adjustments.length });
+    this.observe('privilege', 'approval', 'allowed', `${a.id} approved ${q.id} (revision ${q.revision}), and the application ${merged.name} was created${q.adjustments.length ? ` with ${q.adjustments.length} adjustment${q.adjustments.length === 1 ? '' : 's'}` : ''}.`, { proposal: q.id, revision: q.revision, adjustments: q.adjustments.length });
     this.hop('nothing is created until an administrator approves', { proposal: q.id, adjustments: q.adjustments.length }, { created: merged.name, defaultPolicy: 'administrators only (lab-invented default): grant it before anyone else can use it' });
     return this.propView(q);
   },

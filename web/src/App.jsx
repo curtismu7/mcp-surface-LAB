@@ -12,6 +12,7 @@ import DiagramTab from "./components/DiagramTab";
 import TalkTrack from "./components/TalkTrack";
 import LastAction from "./components/LastAction";
 import GatewayTracePanel from "./components/GatewayTracePanel";
+import RunRecordPanel from "./components/RunRecordPanel";
 import { ClaimTag } from "./components/Bits";
 import useLab from "./hooks/useLab";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
@@ -108,10 +109,11 @@ export default function App() {
   // Reset: the server clears this workspace's engines (applications, policies, aggregate, deployments, OAuth state, proposals, audit, the lab clock); the diagram goes back in place.
   const reset = useCallback(async () => {
     const ok = await resetWorkspace().catch(() => false);
+    if (ok) lab.clearLast(); // the last action's run went with the workspace
     setResetSignal((n) => n + 1);
     await lab.reload();
     setResetMsg(ok ? "Reset: your workspace's applications, policies, aggregate, deployments, OAuth state, proposals, audit trail and clock are back to the start, and the diagram is back in place." : "Reset failed on the server; the view was reloaded.");
-  }, [lab.reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lab.reload, lab.clearLast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const users = lab.state?.users || [];
   const people = users.filter((p) => p.role === "user"); const admins = users.filter((p) => p.role === "admin");
@@ -190,6 +192,7 @@ export default function App() {
               {tab === "talk" && <TalkTrack talk={story.talkTrack} />}
               {mode === "live" && ACTION_TABS.includes(tab) && <LastAction last={lab.last} />}
               {mode === "live" && ACTION_TABS.includes(tab) && <GatewayTracePanel last={lab.last} />}
+              {ACTION_TABS.includes(tab) && stateReady && (mode === "live" || lab.scenario) && <RunRecordPanel mode={mode} vertical={vertical} last={lab.last} scenarioId={lab.scenario?.id ?? null} />}
             </>
           )}
         </div>

@@ -112,22 +112,26 @@ export const credentialOps = {
     const attempt = { n: ++this.pass.total, user: user.id, app: app.id, defect, at: iso(this.t) };
     const push = (a) => { this.pass.attempts.push(a); if (this.pass.attempts.length > ATTEMPTS_MAX) this.pass.attempts.shift(); };
     const key = `${user.id}/${app.id}`;
-    let token = defect === 'replay' && this.pass.last[key] ? this.pass.last[key] : this.mintAssertion(app, user, defect === 'replay' ? 'none' : defect);
+    const reused = defect === 'replay' && Boolean(this.pass.last[key]);
+    let token = reused ? this.pass.last[key] : this.mintAssertion(app, user, defect === 'replay' ? 'none' : defect);
     const d = decode(token);
     attempt.header = d ? d.header : null; attempt.claims = d ? d.claims : null;
     const minted = tokenDigest(token);
     this.hop('front-end application mints a short-lived signed assertion (RS256)', { for: user.id, target: this.audienceOf(app), defect }, { header: attempt.header, claims: attempt.claims });
+    this.observe('agent', 'assertion.minted', 'info', reused ? `The front-end application presented the same signed assertion for ${user.id} again (a replay). Nothing new was issued.` : `The front-end application minted a signed assertion (RS256) naming ${user.id}, acting as frontend-portal, for ${app.name}${defect === 'none' || defect === 'replay' ? '' : `, with the deliberate defect ${defect}`}. An issuance, not a decision.`, { user: user.id, app: app.id, defect });
     // the gateway verifies, then forwards the SAME bytes
     const g = verify(token, { trust: this.trust(), audience: this.audienceOf(app), now: this.now() });
-    if (!g.ok) { push({ ...attempt, stage: 'gateway', verdict: 'refused', code: g.code }); this.deny('assertion_refused', { user: user.id, app: app.id, code: g.code, stage: 'gateway' }); throw refuse(`assertion_${g.code}`, `the gateway refused the assertion (${g.code})`, 401, { enforcedAt: 'gateway (assertion verification)', verifyCode: g.code }); }
+    if (!g.ok) { this.observe('gateway', 'assertion.gateway', 'refused', `The gateway refused the assertion (${g.code}).`, { code: g.code }); push({ ...attempt, stage: 'gateway', verdict: 'refused', code: g.code }); this.deny('assertion_refused', { user: user.id, app: app.id, code: g.code, stage: 'gateway' }); throw refuse(`assertion_${g.code}`, `the gateway refused the assertion (${g.code})`, 401, { enforcedAt: 'gateway (assertion verification)', verifyCode: g.code }); }
+    this.observe('gateway', 'assertion.gateway', 'allowed', 'The gateway verified the assertion (signature, issuer, audience, expiry, lifetime) and forwarded the same bytes.');
     const forwarded = this.forward(token);
     this.hop('gateway verifies and forwards the assertion unchanged', { verified: ['signature', 'issuer', 'audience', 'expiry'] }, { unchanged: tokenDigest(forwarded) === minted });
     // the backend verifies independently: signature, audience, expiry, issuer, and a replayed jti
     const b = verify(forwarded, { trust: this.trust(), audience: this.audienceOf(app), now: this.now() });
-    if (!b.ok) { push({ ...attempt, stage: 'backend', verdict: 'refused', code: b.code, unchanged: tokenDigest(forwarded) === minted }); throw refuse(`assertion_${b.code}`, `the backend refused the assertion (${b.code})`, 401, { enforcedAt: 'backend (assertion verification)', verifyCode: b.code }); }
-    if (this.pass.seen.has(b.claims.jti)) { push({ ...attempt, stage: 'backend', verdict: 'refused', code: 'replay', unchanged: tokenDigest(forwarded) === minted }); this.deny('assertion_refused', { user: user.id, app: app.id, code: 'replay', stage: 'backend' }); throw refuse('assertion_replay', 'the backend refused the assertion: this jti was already used (replay)', 401, { enforcedAt: 'backend (replay check)', verifyCode: 'replay' }); }
+    if (!b.ok) { this.observe('resource', 'assertion.backend', 'refused', `The backend verified the forwarded assertion itself and refused it (${b.code}).`, { code: b.code }); push({ ...attempt, stage: 'backend', verdict: 'refused', code: b.code, unchanged: tokenDigest(forwarded) === minted }); throw refuse(`assertion_${b.code}`, `the backend refused the assertion (${b.code})`, 401, { enforcedAt: 'backend (assertion verification)', verifyCode: b.code }); }
+    if (this.pass.seen.has(b.claims.jti)) { this.observe('resource', 'assertion.backend', 'refused', 'The backend verified the forwarded assertion itself and refused it (replay): its jti was already used.', { code: 'replay' }); push({ ...attempt, stage: 'backend', verdict: 'refused', code: 'replay', unchanged: tokenDigest(forwarded) === minted }); this.deny('assertion_refused', { user: user.id, app: app.id, code: 'replay', stage: 'backend' }); throw refuse('assertion_replay', 'the backend refused the assertion: this jti was already used (replay)', 401, { enforcedAt: 'backend (replay check)', verifyCode: 'replay' }); }
     if (this.pass.seen.size >= SEEN_MAX) throw refuse('replay_cache_full', `the backend's replay cache holds ${SEEN_MAX} assertions: reset to start over`, 507);
     this.pass.seen.add(b.claims.jti); this.pass.last[key] = token;
+    this.observe('resource', 'assertion.backend', 'allowed', `The backend verified the forwarded assertion itself (signature, issuer, audience, expiry, replay) and now knows the end user is ${b.claims.sub}.`, { user: b.claims.sub });
     const unchanged = tokenDigest(forwarded) === minted;
     push({ ...attempt, stage: 'accepted', verdict: 'accepted', code: '', unchanged });
     this.record('assertion.accepted', { actor: user.id, app: app.id, jti: b.claims.jti });
