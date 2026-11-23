@@ -295,41 +295,51 @@ describe("What Privilege did (Rule 25)", () => {
 });
 
 describe("What each layer logged for this run (Rule 27)", () => {
-  it("Mock: the record of the scripted scenario on screen, all rows simulated, source mock, and a scenario that decides nothing says so (never the previous record)", async () => {
+  // The panel is re-queried every time: it is unmounted and mounted again while a run is read (empty state, then "Collecting", then the record), so a node captured
+  // earlier can be a detached one.
+  const panel = () => screen.getByTestId("run-observability");
+  const rowsOf = (sel) => panel().querySelectorAll(sel);
+
+  it("Mock: the record of the scripted scenario on screen, all rows simulated, source mock, each row naming its step, and a scenario that decides nothing says so (never the previous record)", async () => {
     await mount();
-    const panel = await screen.findByTestId("run-observability", {}, T);
-    expect(panel).toHaveTextContent("What each layer logged for this run");
+    await waitFor(() => expect(rowsOf('tr[data-origin="simulated"]').length).toBeGreaterThan(10), T);
+    expect(panel()).toHaveTextContent("What each layer logged for this run");
     expect(screen.getByTestId("ro-basis")).toHaveTextContent(/Simulated: the lab's mock computed these rows/);
     expect(screen.getByTestId("ro-coverage-privilege")).toHaveTextContent("Simulated");
     expect(screen.getByTestId("ro-coverage-authorize")).toHaveTextContent("Not logged");
-    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/this lab's own simulated engine, not Ping's/);
-    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/Mock shows the decisions the engine took when its tables were generated/);
+    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/this lab's own engine computed them, in Live as well/);
+    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/standing in for Ping's, not Ping's/);
+    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/each row starts with the step \(the call\) that made it, and the counts in the summary add up every call/);
     expect(screen.getByTestId("ro-streams")).toHaveTextContent(/nowhere today/);
-    expect(panel.querySelectorAll('tr[data-origin="simulated"]').length).toBeGreaterThan(10);
-    expect(panel.querySelectorAll('tr[data-origin="logged"], tr[data-origin="response"]').length).toBe(0);
+    expect(rowsOf('tr[data-origin="logged"], tr[data-origin="response"]').length).toBe(0);
+    expect(rowsOf("tr.ro-row .ro-msg")[0]).toHaveTextContent(/^Step 1: /);
     await tab("Authorization (OAuth/CIMD)"); await click("scn-authorization");
     await waitFor(() => expect(screen.getByTestId("ro-none")).toHaveTextContent(/no run record/), T);
     expect(screen.queryByTestId("run-observability")?.querySelectorAll("tr[data-origin]").length ?? 0).toBe(0); // the aggregate scenario's rows are gone
   });
 
-  it("Live: empty before a call; a refused call shows its refusal under Privilege; a configuration change says it makes no run; Mock shows the scenario, not the Live run", async () => {
+  it("Live: empty before a call; a refused call shows its refusal under Privilege; a configuration change and a protocol request each say what they are; Mock shows the scenario, not the Live run", async () => {
     await mount(); await live();
     expect(await screen.findByTestId("ro-empty", {}, T)).toHaveTextContent(/Run the demo/);
     await click("preset-agg-denies"); await click("call-tool");
-    const panel = await screen.findByTestId("run-observability", {}, T);
-    await waitFor(() => expect(panel.querySelectorAll('tr[data-origin="simulated"]').length).toBeGreaterThan(3), T);
-    expect(screen.getByTestId("ro-summary")).toHaveTextContent(/1 refused/);
-    const refused = panel.querySelector('tr[data-outcome="refused"]');
+    await waitFor(() => expect(screen.getByTestId("ro-summary")).toHaveTextContent(/1 refused/), T);
+    expect(rowsOf('tr[data-origin="simulated"]').length).toBeGreaterThan(3);
+    const refused = panel().querySelector('tr[data-outcome="refused"]');
     expect(refused).toHaveAttribute("data-layer", "privilege");
     expect(refused).toHaveTextContent(/tool in the aggregate policy/);
     expect(screen.getByTestId("ro-coverage-resource")).toHaveTextContent("Not logged"); // the member was never asked
-    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/Live is the same engine acting on your calls, so these rows are simulated too/);
+    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/Live is the same engine acting on your calls/);
     // the panel sits after the gateway trace
-    expect(screen.getByTestId("gateway-trace-panel").compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // a later configuration change makes no run: it says so and the call's record is gone
+    expect(screen.getByTestId("gateway-trace-panel").compareDocumentPosition(panel()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // a later configuration change makes no run: it says what it is and the call's record is gone
     await click("fault-agg");
-    expect(await screen.findByTestId("ro-no-run", {}, T)).toHaveTextContent(/makes no run/);
+    expect(await screen.findByTestId("ro-no-run", {}, T)).toHaveTextContent(/changes configuration and takes no gateway, policy or approval decision/);
+    expect(screen.getByTestId("ro-no-run")).toHaveTextContent(/audit log holds it/);
     expect(screen.queryByTestId("run-observability")).toBeNull();
+    // a protocol request is not a configuration change, and the page does not say it is
+    await tab("Authorization (OAuth/CIMD)"); await click("register");
+    await waitFor(() => expect(screen.getByTestId("ro-no-run")).toHaveTextContent(/OAuth, CIMD, routing or session traffic/), T);
+    expect(screen.getByTestId("ro-no-run")).not.toHaveTextContent(/changes configuration/);
     // back to Mock: the scenario's record, never the Live run's
     await fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "mock" } });
     await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/MOCK mode/), T);
@@ -340,7 +350,7 @@ describe("What each layer logged for this run (Rule 27)", () => {
   it("while a run's record is read the page says so and never shows the previous record; a record that cannot be read is an alert", async () => {
     await mount(); await live();
     await click("preset-agg-denies"); await click("call-tool");
-    await screen.findByTestId("run-observability", {}, T);
+    await waitFor(() => expect(screen.getByTestId("ro-summary")).toHaveTextContent(/1 refused/), T);
     const real = globalThis.fetch; let release;
     globalThis.fetch = (u, init) => (String(u).includes("/api/run-record") ? new Promise((res) => { release = () => res(real(u, init)); }) : real(u, init));
     try {
@@ -354,5 +364,21 @@ describe("What each layer logged for this run (Rule 27)", () => {
       await click("preset-agg-denies"); await click("call-tool");
       expect(await screen.findByTestId("ro-error", {}, T)).toHaveTextContent(/does not hold that run/);
     } finally { globalThis.fetch = real; }
+  });
+
+  it("Reset clears what the last action showed, its run included: the panel is back to the empty state, and going to another tab and back does not turn into an error", async () => {
+    await mount(); await live();
+    await click("preset-agg-denies"); await click("call-tool");
+    await waitFor(() => expect(screen.getByTestId("ro-summary")).toHaveTextContent(/1 refused/), T);
+    expect(screen.getByTestId("last-action")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("reset"));
+    expect(await screen.findByTestId("ro-empty", {}, T)).toHaveTextContent(/Run the demo/);
+    expect(screen.queryByTestId("last-action")).toBeNull();
+    expect(screen.queryByTestId("ro-error")).toBeNull();
+    await tab("Diagram"); await tab("Aggregate");
+    await screen.findByTestId("members", {}, T);
+    expect(await screen.findByTestId("ro-empty", {}, T)).toBeInTheDocument();
+    expect(screen.queryByTestId("ro-error")).toBeNull();
+    expect(screen.queryByTestId("last-action")).toBeNull();
   });
 });

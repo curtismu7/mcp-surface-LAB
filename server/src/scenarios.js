@@ -231,7 +231,7 @@ export function runScenario(cast, sc) {
     const params = stepParams(st, prev);
     const r = perform(e, st.op, params);
     prev.push(r);
-    return { say: st.say, op: st.op, result: r, events: e.lastRun };
+    return { say: st.say, op: st.op, result: r, events: e.lastRunKept ? e.lastRun : null };
   });
   return { engine: e, steps };
 }

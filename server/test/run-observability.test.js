@@ -5,11 +5,12 @@ import { test } from 'node:test';
 import { Engine } from '../src/engine.js';
 import { RUN_OPS, isRunOp, perform } from '../src/actions.js';
 import { MOCK_TABLE } from '../src/mockTable.js';
-import { MAX_RUNS, buildRecord, commitRun, decisionLine, hasDecision, lineValue } from '../src/runObs.js';
+import { MAX_RUNS, buildRecord, commitRun, decisionLine, hasDecision, lineValue, scenarioRecord } from '../src/runObs.js';
 import { runAction } from '../src/service.js';
 import { createWorkspaces } from '../src/workspaces.js';
 import { assertRunObservability, classify, layerMatchers } from '../src/runObservability.js';
 import { VERTICALS } from '../src/cast.js';
+import { sampleSpec } from '../src/world.js';
 import { SECRETS } from './secrets.js';
 import { A, A1, A2, A2N, AGG, C, U, U2, X, act, callTool, get, mcp, newEngine, ok, run, withServer } from './helpers.js';
 
@@ -20,6 +21,7 @@ const route = { method: 'POST', url: '/api/act/(action)' };
 const rec = async (events, runId = 'run-test') => { const r = await buildRecord({ runId, events: events.map((e, i) => ({ ...e, seq: i + 1 })) }); assert.deepEqual(assertRunObservability(r), []); return r; };
 const rows = (r) => r.rows.filter((x) => x.origin !== 'not-logged');
 const of = (r, layer) => rows(r).filter((x) => x.layer === layer);
+const buildRecordFor = async (vertical, scenario) => { const r = await scenarioRecord(vertical, scenario); assert.deepEqual(assertRunObservability(r), []); return r; };
 const tools = (name, args = {}) => ({ name, arguments: args });
 // One action through the service (the path the API takes), with the lines it wrote.
 function step(ctx, op, params) {
@@ -45,7 +47,8 @@ test('a permitted aggregate call: every layer the call crossed has rows, in the 
   assert.match(of(r, 'person')[0].message, /no sign-in/);
   // privilege = the policy checks (allowed), gateway = the pipeline (information unless it is a policy point), agent = the credential step (an injection is information)
   assert.ok(of(r, 'privilege').length >= 4 && of(r, 'privilege').every((x) => x.outcome === 'allowed'));
-  assert.ok(of(r, 'gateway').filter((x) => x.outcome === 'allowed').every((x) => /JSON-RPC method/.test(x.message)), 'only the method check is an allow in the gateway lane');
+  assert.ok(of(r, 'gateway').every((x) => x.outcome === 'info'), 'nothing in the gateway lane is an allow: the method list is the gateway\'s own, the same for every caller, so passing it is information');
+  assert.equal(of(r, 'gateway').find((x) => x.detail.check === 'aggregate.method').outcome, 'info');
   assert.ok(of(r, 'agent').every((x) => x.outcome === 'info'), 'a credential injection is information, not an allow');
   assert.ok(of(r, 'resource').length === 1 && of(r, 'resource')[0].outcome === 'info', 'the mock MCP server answering is information');
   assert.equal(r.summary.refused, 0);
@@ -255,7 +258,8 @@ test('the core\'s masker leaves this lab\'s own words readable: no row of any st
       const events = sc.run.events;
       assert.equal(rows(r).length, events.length, `${vertical}/${sc.id}: one row per stored event`);
       rows(r).forEach((row, i) => {
-        assert.equal(row.message.slice(0, 280), events[i].message.slice(0, 280), `${vertical}/${sc.id} row ${i}: the message the engine wrote is the message shown`);
+        assert.equal(row.message.slice(0, 280), `Step ${events[i].n}: ${events[i].message}`.slice(0, 280), `${vertical}/${sc.id} row ${i}: the message the engine wrote is the message shown, after the step that made it`);
+        assert.equal(row.detail.scenarioStep, events[i].n);
         assert.equal(row.atExact, events[i].at);
         assert.equal(row.layer, events[i].layer);
         assert.equal(row.outcome, events[i].outcome);
@@ -344,20 +348,51 @@ test('Live runs are bounded per workspace and vertical, and the newest is never 
   assert.ok(engineOf(c).runs.every((r) => r.mode === 'live'));
 });
 
-test('a recorder that throws never breaks the action or its audit, and says so on stderr', () => {
-  const c = ctx();
-  const errors = [];
-  const original = console.error;
+const SNAPSHOT = (c) => JSON.stringify([engineOf(c).snapshot(), engineOf(c).audit]);
+function withStderr(fn) {
+  const errors = []; const original = console.error;
+  console.error = (m) => errors.push(String(m));
+  try { return { value: fn(), errors }; } finally { console.error = original; }
+}
+const callOnce = (c, log) => runAction({ ws: 'w', workspaces: c.workspaces, vertical: 'finance', cast: C, op: 'mcp', params: { user: U, target: DIRECT, rpc: { method: 'tools/call', params: tools('search', { query: 'q' }) } }, route, log });
+
+test('a writer that throws part-way never breaks the action, its audit or its state; the run keeps its id and stays readable, every line is tried, and the reply says the log failed', async () => {
+  const good = ctx(); const bad = ctx();
+  callOnce(good, (l) => good.lines.push(l));
+  const goodEvents = engineOf(good).runs[0].events.length;
+  assert.ok(goodEvents > 3, 'there are more than three lines to fail on');
+  let calls = 0;
+  const { value: r, errors } = withStderr(() => callOnce(bad, () => { calls += 1; if (calls === 3) throw Object.assign(new Error('disk full\nfake line'), { code: 'EPIPE' }); }));
+  assert.equal(r.outcome.ok, true, 'the call still answers');
+  assert.equal(calls, goodEvents, 'every line was tried, the failing one included');
+  assert.ok(r.runId && r.runLogFailed === true, 'the run keeps its id, and the reply says the log failed');
+  assert.equal(engineOf(bad).runs.length, 1);
+  assert.equal(engineOf(bad).runs[0].id, r.runId, 'the run is the one the id names: reachable, using its one slot');
+  assert.ok(engineOf(bad).audit.length >= 1 && engineOf(bad).audit.length === engineOf(good).audit.length, 'the same audit entries as with a healthy writer');
+  assert.equal(SNAPSHOT(bad).replace(/mock-[a-z]+-\d+/g, ''), SNAPSHOT(good).replace(/mock-[a-z]+-\d+/g, ''), 'the state and the audit are identical to a healthy writer\'s');
+  const record = await rec(engineOf(bad).runs[0].events, r.runId);
+  assert.equal(rows(record).length, goodEvents, 'the record holds every decision');
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /^\[mcp-surface-lab\] the run log was not written completely: EPIPE: disk full fake line$/);
+  const ok = withStderr(() => callOnce(good, () => {}));
+  assert.equal(ok.value.runLogFailed, false);
+  assert.deepEqual(ok.errors, []);
+});
+
+test('over HTTP a failing writer is reported in the act reply and the run is still read by its id', async () => {
+  const errors = []; const original = console.error;
   console.error = (m) => errors.push(String(m));
   try {
-    const r = runAction({ ws: 'w', workspaces: c.workspaces, vertical: 'finance', cast: C, op: 'mcp', params: { user: U, target: DIRECT, rpc: { method: 'tools/list' } }, route, log: () => { throw Object.assign(new Error('disk full\nfake line'), { code: 'EPIPE' }); } });
-    assert.equal(r.outcome.ok, true, 'the call still answers');
-    assert.equal(r.runId, null);
-    assert.ok(engineOf(c).audit.some((a) => a.kind === 'mcp.call'), 'the audit entry was written');
-    assert.equal(engineOf(c).lastRun, null);
+    await withServer(async (url) => {
+      const a = await act(url, 'mcp', { user: U, target: DIRECT, rpc: { method: 'tools/list' } }, 'wf');
+      assert.equal(a.status, 200);
+      assert.ok(a.body.runId && a.body.runLogFailed === true);
+      const got = await (await get(url, `/api/run-record?mode=live&vertical=finance&runId=${a.body.runId}`, { 'x-workspace': 'wf' })).json();
+      assert.equal(got.record.runId, a.body.runId);
+      assert.deepEqual(assertRunObservability(got.record), []);
+    }, { log: () => { throw new Error('closed'); } });
   } finally { console.error = original; }
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /^\[mcp-surface-lab\] the run was not recorded: EPIPE: disk full fake line$/);
 });
 
 test('the lab declares no correlation id, calls the collector in Mock form only, and names no reader', async () => {
@@ -390,4 +425,157 @@ test('rows come from the engine\'s stored events only, even for a long mixed run
   assert.equal(e.lastRun, null, 'a configuration change leaves no events');
   callTool(e, U, DIRECT, 'search', { query: 'q' });
   assert.ok(e.lastRun.every((x) => x.at === '2026-11-02T09:20:00Z'));
+});
+
+test('a request that fails validation began no run, however much was already checked for the caller: no id, no record, its decisions on stdout with run=-, and no workspace slot', () => {
+  const malformed = [
+    { as: C.castAgent, target: DIRECT, rpc: { method: 5 } },                         // the agent key is checked before the body is read
+    { as: C.castAgent, target: DIRECT, rpc: { method: 'tools/list', params: 'x' } },
+    { user: U, target: DIRECT, rpc: { method: 'tools/list' }, style: 'nope' },       // read fine, then a wire style the lab does not know
+    { as: C.castAgent, target: DIRECT, rpc: { method: 'tools/list' }, style: 'nope' },
+  ];
+  for (const params of malformed) {
+    const c = ctx();
+    const r = step(c, 'mcp', params);
+    assert.equal(r.outcome.ok, false, JSON.stringify(params));
+    assert.equal(r.outcome.status, 400);
+    assert.equal(r.runId, null, 'no run id');
+    assert.equal(r.runLogFailed, false);
+    assert.equal(engineOf(c), null, 'a refused request holds no workspace slot');
+    if (params.as) {
+      assert.ok(c.lines.length >= 3 && c.lines.every((l) => / run=-$/.test(l) && LINE.test(l)), `${c.lines.length} lines, all run=-: ${c.lines.join(' | ')}`);
+      assert.ok(c.lines.some((l) => / check=agent\.key /.test(l)), 'the key checked before the body was read is still on stdout');
+    } else assert.deepEqual(c.lines, [], 'only a person lookup was made: nothing decided');
+  }
+  // the same request over HTTP: a 400 with no run id, and the record route has nothing to be asked for
+  const c = ctx();
+  const kept = step(c, 'mcp', { as: C.castAgent, target: DIRECT, rpc: { method: 'tools/list' } });
+  assert.ok(kept.runId, 'the well-formed request makes a run');
+  // a refusal of the key itself, with a malformed body, is still the key refused: a decision, so a run
+  run(engineOf(c), 'setAgent', { actor: A, agentId: C.castAgent, enabled: false });
+  const revoked = step(c, 'mcp', { as: C.castAgent, target: DIRECT, rpc: { method: 5 } });
+  assert.ok(revoked.runId, 'a revoked key is refused before the body is read, and that refusal is a run');
+});
+
+test('over HTTP a malformed request answers 400 with no run id and leaves no workspace; its decisions are on stdout with run=-', async () => {
+  const lines = [];
+  await withServer(async (url, { workspaces }) => {
+    for (const [i, params] of [{ as: C.castAgent, target: DIRECT, rpc: { method: 5 } }, { user: U, target: DIRECT, rpc: { method: 'tools/list' }, style: 'nope' }].entries()) {
+      const a = await act(url, 'mcp', params, `mal${i}`);
+      assert.equal(a.status, 400);
+      assert.equal(a.body.runId, null);
+      assert.equal(workspaces.peek(`mal${i}`, 'finance'), null, 'no slot was taken');
+      const none = await (await get(url, '/api/run-record?mode=live&vertical=finance', { 'x-workspace': `mal${i}` })).json();
+      assert.equal(none.record, null);
+    }
+  }, { log: (l) => lines.push(l) });
+  assert.ok(lines.length >= 3 && lines.every((l) => / run=-$/.test(l)), lines.join(' | '));
+});
+
+test('a run id is only returned for a run the workspace holds (the record route can always find it)', () => {
+  const held = ctx();
+  const r = step(held, 'mcp', { user: U, target: DIRECT, rpc: { method: 'tools/list' } });
+  assert.equal(engineOf(held).runs.at(-1).id, r.runId);
+  // a store that does not keep the engine: the decisions are on stdout with run=-, and no id is returned
+  const lines = [];
+  const store = { peek: () => null, assertRoom() {}, adopt() {}, engine() { throw new Error('unused'); } };
+  const lost = runAction({ ws: 'w', workspaces: store, vertical: 'finance', cast: C, op: 'mcp', params: { user: U, target: DIRECT, rpc: { method: 'tools/list' } }, route, log: (l) => lines.push(l) });
+  assert.equal(lost.runId, null);
+  assert.ok(lines.length > 1 && lines.every((l) => / run=-$/.test(l)));
+});
+
+test('a fault is information however it arrives, the lab\'s own limits are blocked, and only the gateway turning a request away is a refusal', async () => {
+  const e = newEngine();
+  ok(run(e, 'catDeploy', { actor: A, entryId: 'kb-search', name: 'kb' }));
+  const id = `tenant-${C.castHost}/kb`;
+  run(e, 'catCrash', { actor: A, id });
+  let r = await rec((callTool(e, U, { kind: 'app', id: 'kb' }, 'search_docs', { query: 'q' }), e.lastRun));
+  assert.equal(r.summary.refused, 0, 'a container that is not running is a fault, not a refusal');
+  const gave = of(r, 'resource').find((x) => /gave no answer/.test(x.message));
+  assert.equal(gave.outcome, 'info');
+  assert.match(gave.message, /container is not running/);
+  assert.ok(!rows(r).some((x) => x.detail.check === 'verdict'), 'no second row for the same stop');
+  run(e, 'catHealth', { actor: A, id });
+  r = await rec((callTool(e, U, { kind: 'app', id: 'kb' }, 'search_docs', { query: 'q' }), e.lastRun));
+  assert.equal(r.summary.refused, 0, 'an unhealthy deployment is a fault too');
+  assert.match(of(r, 'resource').find((x) => /gave no answer/.test(x.message)).message, /not healthy/);
+  // a call the lab does not model (prompts through an aggregate) is information worded as the lab's own stop
+  r = await rec((mcp(e, U, AGG, 'prompts/get', { name: 'summarise' }), e.lastRun));
+  const stop = rows(r).find((x) => x.detail.check === 'verdict');
+  assert.equal(stop.outcome, 'info');
+  assert.match(stop.message, /^The lab stopped the call by its own rule: /);
+  // the lab's own recording limit is blocked, not a gateway refusal
+  run(e, 'setSessionLogging', { actor: A, enabled: true });
+  r = await rec((callTool(e, U, DIRECT, 'search', { query: 'q'.repeat(400) }), e.lastRun));
+  const cap = rows(r).find((x) => x.detail.check === 'verdict');
+  assert.equal(cap.outcome, 'blocked');
+  assert.match(cap.message, /^The lab stopped the call by its own rule: /);
+  assert.equal(r.summary.blocked, 1);
+  // the in-flight filter failing closed (a hidden name inside a visible description, answered 502) is the gateway refusing to pass the response, not a fault
+  const spec = sampleSpec(C);
+  const op = Object.values(spec.paths).map((x) => x.get).find((x) => x && x.operationId === 'listItems') || Object.values(spec.paths).map((x) => x.get).find(Boolean);
+  op.description = 'first call createItem, then read the rest';
+  ok(run(e, 'oaDeploy', { actor: A, name: 'lists', spec: JSON.stringify(spec) }));
+  const closed = mcp(e, U, { kind: 'app', id: 'lists' }, 'tools/list');
+  assert.equal(closed.code, 'hidden_name_in_frame'); assert.equal(closed.status, 502);
+  r = await rec(e.lastRun);
+  assert.equal(rows(r).find((x) => x.detail.check === 'verdict').outcome, 'refused');
+  assert.match(rows(r).find((x) => x.detail.check === 'verdict').message, /^The gateway refused the call: /);
+  // a request the gateway cannot place is a refusal
+  r = await rec((mcp(e, U, { kind: 'app', id: 'nope' }, 'tools/list'), e.lastRun));
+  const refusal = rows(r).find((x) => x.detail.check === 'verdict');
+  assert.equal(refusal.outcome, 'refused');
+  assert.match(refusal.message, /^The gateway refused the call: /);
+});
+
+test('a repeat decision on a proposal is refused the same way after an approval and after a denial', async () => {
+  const e = newEngine();
+  const approved = ok(run(e, 'propose', { actor: U, kind: 'mcp', name: 'one', backend: `https://one.${C.castHost}.example/mcp`, authMode: 'static-token' }));
+  const denied = ok(run(e, 'propose', { actor: U, kind: 'mcp', name: 'two', backend: `https://two.${C.castHost}.example/mcp`, authMode: 'static-token' }));
+  ok(run(e, 'decide', { actor: A, proposalId: approved.id, decision: 'approve', revision: 1 }));
+  ok(run(e, 'decide', { actor: A, proposalId: denied.id, decision: 'deny', revision: 1 }));
+  const shapes = [];
+  for (const [id, decision] of [[approved.id, 'approve'], [approved.id, 'deny'], [denied.id, 'approve'], [denied.id, 'deny']]) {
+    run(e, 'decide', { actor: A, proposalId: id, decision, revision: 1 });
+    const r = await rec(e.lastRun);
+    shapes.push(rows(r).map((x) => `${x.layer}:${x.outcome}`).join(','));
+    assert.equal(r.summary.refused, 1, `${id} ${decision}`);
+    assert.match(of(r, 'privilege')[0].message, /cannot be decided again|only a pending proposal can be decided/);
+  }
+  assert.deepEqual([...new Set(shapes)], ['person:info,privilege:refused'], 'the same run shape, so a viewer cannot tell which first answer it was');
+  // an administrator's own valid denial is still a refused row (the approver turning the request down)
+  const third = ok(run(e, 'propose', { actor: U, kind: 'mcp', name: 'three', backend: `https://three.${C.castHost}.example/mcp`, authMode: 'static-token' }));
+  run(e, 'decide', { actor: A, proposalId: third.id, decision: 'deny', revision: 1 });
+  assert.deepEqual(of(await rec(e.lastRun), 'privilege').map((x) => x.outcome), ['refused']);
+});
+
+test('with the aggregate fault on, the listing says it was not cut by the aggregate policy (information, in the run and in What Privilege did), instead of "0 left out"', async () => {
+  const e = newEngine();
+  run(e, 'setFault', { actor: A, aggregateSkipsCheck: true });
+  mcp(e, U, AGG, 'tools/list');
+  const listing = (await rec(e.lastRun)).rows.find((x) => x.detail?.check === 'aggregate.listing');
+  assert.equal(listing.outcome, 'info');
+  assert.match(listing.message, /did not cut the listing/);
+  assert.ok(!/left out by the aggregate policy/.test(listing.message));
+  await withServer(async (url) => {
+    await act(url, 'setFault', { actor: A, aggregateSkipsCheck: true }, 'fl');
+    const t = (await act(url, 'mcp', { user: U, target: AGG, rpc: { method: 'tools/list' } }, 'fl')).body.trace;
+    const d = t.decisions.find((x) => x.id === 'aggregate.listing');
+    assert.equal(d.outcome, 'info');
+    assert.match(d.evidence, /did not cut the listing/);
+    const normal = (await act(url, 'mcp', { user: U2, target: AGG, rpc: { method: 'tools/list' } }, 'fl2')).body.trace.decisions.find((x) => x.id === 'aggregate.listing');
+    assert.match(normal.evidence, /left out by the aggregate policy/);
+  });
+});
+
+test('every Mock row names the step that made it, and the protocol list the page uses is made of real actions that are not runs', async () => {
+  const sc = MOCK_TABLE.verticals.finance.scenarios.find((x) => x.id === 'aggregate-cap');
+  const r = await buildRecordFor('finance', sc);
+  assert.ok(rows(r).every((x) => x.message.startsWith(`Step ${x.detail.scenarioStep}: `)));
+  assert.ok(new Set(rows(r).map((x) => x.detail.scenarioStep)).size > 1, 'several calls in one scripted run, each marked');
+  const fs = await import('node:fs');
+  const { OP_NAMES } = await import('../src/actions.js');
+  const web = fs.readFileSync(new URL('../../web/src/components/RunRecordPanel.jsx', import.meta.url), 'utf8');
+  const protocol = [...(/const PROTOCOL_OPS = \[([^\]]*)\]/.exec(web)[1]).matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]);
+  assert.ok(protocol.length > 3 && protocol.every((op) => OP_NAMES.includes(op) && !isRunOp(op)), protocol.join());
 });

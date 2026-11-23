@@ -28,16 +28,22 @@ export const METHODS = ['initialize', 'ping', 'tools/list', 'tools/call', 'promp
 const LIST_METHODS = ['tools/list', 'prompts/list', 'resources/list'];
 const DENY_MSG = 'access denied';
 // Run observability (rule 27): what each check means in a run record. The key is the last part of the check's id; the value is [layer, kind]. Only a policy point's
-// decision is allowed or refused (kind 'policy'). A request the gateway turns away because it is not a well-formed call (kind 'request') is refused when it fails and
-// information when it passes. A fault (the application is down, a member is missing or hangs) and a plain step (the in-flight filter ran) are information.
+// decision is allowed or refused (kind 'policy': the grants, the cap, the key). A request the gateway turns away because it is not a call it understands (kind 'request': a
+// method outside its fixed list, an unknown tool, a name with no member prefix) is refused when it fails and information when it passes: the same for every caller, so a
+// pass is not an allow. A fault (the application is down, a member is missing or hangs) and a plain step (the in-flight filter ran) are information.
 const CHECKS = {
   key: ['agent', 'policy'], scope: ['agent', 'policy'], credential: ['agent', 'request'],
-  method: ['gateway', 'policy'], policy: ['privilege', 'policy'], entitlement: ['privilege', 'policy'], cap: ['privilege', 'policy'], toolfilter: ['privilege', 'policy'],
+  method: ['gateway', 'request'], policy: ['privilege', 'policy'], entitlement: ['privilege', 'policy'], cap: ['privilege', 'policy'], toolfilter: ['privilege', 'policy'],
   target: ['gateway', 'request'], kind: ['gateway', 'request'], namespace: ['gateway', 'request'], member: ['gateway', 'request'],
   resolve: ['gateway', 'fault'], reach: ['gateway', 'fault'], connect: ['gateway', 'fault'], filter: ['gateway', 'none'], listing: ['gateway', 'none'],
 };
 // The id that goes on the stdout line: the word "scope" is one the family's log matchers read, so the key's grant check is written as a grant.
 const checkStep = (id) => (id === 'agent.scope' ? 'agent.grant' : id);
+// A stop no check recorded. The lab's own recording limits stop the call (blocked), and a call the lab does not model is information. Anything else is the gateway turning
+// the call away (an unknown application, a response its in-flight filter will not pass). A fault on the way (a catalog container that is not running) is information too, but
+// it is explained where it is thrown (the upstream answer) and so never reaches this.
+const LAB_STOPS = { recording_full: 'blocked', arguments_too_large_to_record: 'blocked', not_modelled: 'info' };
+const verdictOf = (e) => (Object.hasOwn(LAB_STOPS, e.code) ? [LAB_STOPS[e.code], `The lab stopped the call by its own rule: ${e.message}`] : ['refused', `The gateway refused the call: ${e.message}`]);
 // A JSON-RPC method the visitor typed is only ever stored or shown if it is one the gateway knows; anything else is '(unrecognised)'.
 const safeMethod = (m) => (METHODS.includes(m) ? m : '(unrecognised)');
 
@@ -75,7 +81,7 @@ export class Engine {
     this.audit = []; this.auditDropped = 0; this.recordings = []; this.sessionLogging = false;
     this.hops = []; this.hopsTruncated = false; this.trace = null;
     this.gw = null; this.gwTrace = null; // "What Privilege did": the decisions of the call being made, and the finished record (only for a web action, like the hops)
-    this.run = null; this.lastRun = null; this.runs = []; // run observability: the events of the action being made, of the last one made, and the runs kept (service.js, runObs.js)
+    this.run = null; this.lastRun = null; this.lastRunKept = false; this.runs = []; // run observability: the events of the action being made, of the last one made, and the runs kept (service.js, runObs.js)
     this.agents = AGENTS(cast).map((a) => ({ ...a }));
     this.tenants = [cast.castHost, cast.castTenant2];
     this.auth = new AuthServer({ host: cast.castHost, docs: cimdDocs(cast), allowlist: CIMD_ALLOWLIST_DEFAULT(cast) });
@@ -102,17 +108,18 @@ export class Engine {
   // A run is what one visitor action (or one scripted step) decided, in the order the engine decided it, each decision stamped ONCE with the lab clock. An event exists
   // only where the code takes the branch, so nothing is invented and a check that was never reached has no event. The service layer gives the run an id, keeps it and
   // writes its stdout lines (runObs.js); the engine itself does no I/O. Only the actions in actions.js RUN_OPS begin a run.
-  beginRun() { this.run = { events: [], actor: null, agent: null, failed: false, seen: new Set() }; this.lastRun = null; }
-  endRun() { this.lastRun = this.run ? this.run.events : null; this.run = null; }
+  beginRun() { this.run = { events: [], actor: null, agent: null, explained: false, rejected: false, seen: new Set() }; this.lastRun = null; this.lastRunKept = false; }
+  // `lastRunKept` is false for a request that failed validation: it began no run, so its events (a key checked before the request was read) get no run id.
+  endRun() { this.lastRun = this.run ? this.run.events : null; this.lastRunKept = this.run ? !this.run.rejected : false; this.run = null; }
   observe(layer, check, outcome, message, detail = {}) {
     if (!this.run) return;
-    if (outcome === 'refused') this.run.failed = true;
+    if (outcome === 'refused') this.run.explained = true;
     this.run.events.push({ at: iso(this.t), layer, check, outcome, message, detail, actor: this.run.actor, agent: this.run.agent });
   }
   observeCheck(id, label, o, evidence) {
     if (!this.run) return;
     const [layer, kind] = CHECKS[id.slice(id.lastIndexOf('.') + 1)] || ['gateway', 'none'];
-    if (o === 'fail') this.run.failed = true;
+    if (o === 'fail') this.run.explained = true;
     const outcome = o === 'info' ? 'info' : kind === 'policy' ? (o === 'pass' ? 'allowed' : 'refused') : kind === 'request' && o === 'fail' ? 'refused' : 'info';
     this.observe(layer, checkStep(id), outcome, `${label}: ${evidence}`, layer === 'agent' && this.run.agent ? { agent: this.run.agent } : {});
   }
@@ -356,7 +363,8 @@ export class Engine {
     }
     let answer;
     try { answer = this.upstreamAnswer(app, rpc, identity, user.id); } catch (e) {
-      if (e instanceof InputError) this.observe('resource', 'upstream', e.code === 'invalid_arguments' ? 'refused' : 'info', e.code === 'invalid_arguments' ? `The mock MCP server for ${app.name} checked the arguments against the tool's input schema and answered with an error.` : `The mock MCP server for ${app.name} could not answer (${e.code}).`, { app: app.id, code: e.code });
+      if (e instanceof InputError && this.run) this.run.explained = true;
+      if (e instanceof InputError) this.observe('resource', 'upstream', e.code === 'invalid_arguments' ? 'refused' : 'info', e.code === 'invalid_arguments' ? `The mock MCP server for ${app.name} checked the arguments against the tool's input schema and answered with an error.` : `The mock MCP server for ${app.name} gave no answer: ${e.message}.`, { app: app.id, code: e.code });
       throw e;
     }
     this.observe('resource', 'upstream', 'info', `The mock MCP server for ${app.name} answered ${safeMethod(rpc.method)}${rpc.method === 'tools/call' ? ` for ${rpc.params.name}` : ''} with everything it has: it knows nothing of entitlements, and the gateway's filter comes next.`, { app: app.id, method: safeMethod(rpc.method) });
@@ -394,15 +402,19 @@ export class Engine {
   // ---- the tool call, as the agent makes it --------------------------------------------------------------------------------------------------
   // params: { user | as, target: { kind: 'app' | 'aggregate', id }, rpc: { method, params, id }, style }
   mcp(p) {
-    const seen = { target: null, rpc: null }; const startN = this.n.audit;
+    const seen = { target: null, rpc: null, called: false }; const startN = this.n.audit;
     this.gw = this.trace ? { decisions: [], who: null, wire: null } : null; this.gwTrace = null;
     try {
       const res = this.mcpCall(p, seen);
       if (this.gw && seen.rpc) this.gwTrace = this.buildGwTrace(seen, res, null, startN);
       return res;
     } catch (e) {
-      // A refusal that no check recorded (the call was too large to record, say) is still the gateway's answer: one event, so a refused run never reads as an unexplained one.
-      if (e instanceof InputError && seen.rpc && this.run && !this.run.failed) this.observe('gateway', 'verdict', 'refused', `The gateway refused the call: ${e.message}`, { code: e.code });
+      // A request that failed validation before it became a gateway call (a malformed JSON-RPC body, a style the lab does not know) began no run, whatever was already
+      // checked for the caller. A stop that no check recorded, once the call began, still gets one event, so it never reads as an unexplained run.
+      if (e instanceof InputError && this.run && !this.run.explained) {
+        if (!seen.called) this.run.rejected = true;
+        else this.observe('gateway', 'verdict', ...verdictOf(e), { code: e.code });
+      }
       if (this.gw && e instanceof InputError) {
         if (!seen.rpc) { try { seen.rpc = this.parseRpc(p.rpc); } catch { /* the request itself was refused before it was a gateway call */ } }
         if (!seen.target && seen.rpc && isObj(p.target) && (p.target.kind === 'app' || p.target.kind === 'aggregate')) seen.target = p.target;
@@ -423,7 +435,7 @@ export class Engine {
     seen.rpc = rpc;
     if (p.style !== undefined && !STYLES.includes(p.style)) throw refuse('bad_style', 'style is json, sse, gzip or gzip-sse');
     this.assertRoom();
-    this.n.call++;
+    this.n.call++; seen.called = true;
     this.hop('agent to gateway: JSON-RPC over HTTP', { path: p.target.kind === 'aggregate' && typeof p.target.id === 'string' && Object.hasOwn(this.aggregates, p.target.id) ? this.aggregates[p.target.id].entryPath : p.target.kind === 'app' && typeof p.target.id === 'string' && Object.hasOwn(this.apps, p.target.id) ? this.apps[p.target.id].entryPath : '(unknown path)', method: safeMethod(rpc.method), as: who.label }, { note: 'the agent holds no backend credential' });
     if (rpc.method === 'tools/call' && this.sessionLogging && !fitsRecording(rpc.params.arguments)) throw refuse('arguments_too_large_to_record', `session logging is on and these arguments exceed what a recording holds without cutting anything (${RECORDING_LIMITS.items} list items, ${RECORDING_LIMITS.keys} keys, ${RECORDING_LIMITS.depth} levels, ${RECORDING_LIMITS.chars} characters per text): the call is refused whole`, 413);
     if (rpc.method === 'tools/call' && this.sessionLogging && this.recordings.length >= LIMITS.recordings) throw refuse('recording_full', `session logging is on and the recording holds ${LIMITS.recordings} calls: the call is refused rather than left unrecorded. Reset to start over`, 507);
@@ -558,7 +570,10 @@ export class Engine {
       members.push(row);
     }
     const sum = (k) => members.reduce((n, x) => n + x[k].length, 0);
-    this.check('aggregate.listing', 'Aggregate: listing cut by the aggregate policy', true, `${tools.length} tool${tools.length === 1 ? '' : 's'} listed across ${members.length} member${members.length === 1 ? '' : 's'}; ${sum('hiddenByAggregate')} left out by the aggregate policy or a member tool filter (only counted where the member itself would have allowed them), ${sum('hiddenByMember')} left out by the member's own policy; no member was connected`);
+    const listed = `${tools.length} tool${tools.length === 1 ? '' : 's'} listed across ${members.length} member${members.length === 1 ? '' : 's'}`;
+    // With the fault switch on the aggregate did not cut the listing at all, so the check says that (information, like every skipped check) instead of "0 left out".
+    if (this.faults.aggregateSkipsCheck) this.check('aggregate.listing', 'Aggregate: listing not cut by the aggregate policy', true, `the fault switch "aggregate skips its own check" is on, so the aggregate did not cut the listing by its policy or a member tool filter: ${listed}; ${sum('hiddenByMember')} left out by the member's own policy; no member was connected`, 'info');
+    else this.check('aggregate.listing', 'Aggregate: listing cut by the aggregate policy', true, `${listed}; ${sum('hiddenByAggregate')} left out by the aggregate policy or a member tool filter (only counted where the member itself would have allowed them), ${sum('hiddenByMember')} left out by the member's own policy; no member was connected`);
     this.hop('aggregate lists: members resolved lazily, no member connected', { members: agg.members.length }, { tools: tools.length, members: members.map((x) => `${x.alias}: ${x.status}`) });
     return { rpc: rpcOk(rpc.id, { tools }), ...base, operator: { enforcedAt: 'aggregate (listing)', members, connectsThisCall: 0, log: members.flatMap((x) => x.hiddenByAggregate.map((n) => `Removing tool the aggregate policy does not permit: ${n}`)) } };
   }

@@ -35,15 +35,21 @@ export const hasDecision = (events) => Array.isArray(events) && events.some((e) 
 const PART = crypto.randomBytes(3).toString('hex');
 let made = 0;
 
-// Keeps the events of one action as a run on its engine (the newest MAX_RUNS), and writes one stdout line per event. Returns the run id, or null when the action
-// made no decision (the caller says so; it never shows an older run).
-export function commitRun(engine, events, write) {
+// Keeps the events of one action as a run on its engine (the newest MAX_RUNS), and writes one stdout line per event. `kept` is false for a request that began no run (it
+// failed validation, or its workspace is not held): its lines are still written, with run=-, and it gets no id. Returns null when the action made no decision (the caller
+// says so; it never shows an older run), else { id, writeError }: the id is null when no run was kept, writeError is the first error the writer threw.
+// The run is kept, with its id, BEFORE anything is written, so a writer that fails part-way loses lines and never the run: every line is tried, and the page is told.
+export function commitRun(engine, events, write, kept = true) {
   if (!hasDecision(events)) return null;
-  const run = { id: `run-${PART}-${++made}`, mode: 'live', events: events.map((e, i) => ({ ...e, seq: i + 1 })) };
-  engine.runs.push(run);
-  if (engine.runs.length > MAX_RUNS) engine.runs.shift();
-  for (const e of run.events) write(decisionLine(e, run.id));
-  return run.id;
+  const id = kept ? `run-${PART}-${++made}` : null;
+  const stored = events.map((e, i) => ({ ...e, seq: i + 1 }));
+  if (kept) {
+    engine.runs.push({ id, mode: 'live', events: stored });
+    if (engine.runs.length > MAX_RUNS) engine.runs.shift();
+  }
+  let writeError = null;
+  for (const e of stored) { try { write(decisionLine(e, id)); } catch (err) { writeError ??= err; } }
+  return { id, writeError };
 }
 
 const PRODUCT = { person: 'lab roster', agent: 'lab agent and credential step', privilege: 'lab policy engine', gateway: 'lab simulated MCP gateway', resource: 'lab mock MCP server' };
@@ -64,7 +70,7 @@ export async function buildRecord({ runId, events, clock = Date.now }) {
     runId, startedAt: events[0].at, endedAt: events[events.length - 1].at, source: 'mock',
     layers: LAYERS.map((layer) => ({
       layer, products: [], reason: WHY[layer],
-      simulated: events.filter((e) => e.layer === layer).map((e) => ({ at: e.at, product: PRODUCT[layer], outcome: e.outcome, message: e.message, detail: { ...e.detail, check: e.check, seq: e.seq, ...(e.n ? { scenarioStep: e.n } : {}), ...(e.actor ? { actor: e.actor } : {}), ...(e.agent ? { agent: e.agent } : {}) } })),
+      simulated: events.filter((e) => e.layer === layer).map((e) => ({ at: e.at, product: PRODUCT[layer], outcome: e.outcome, message: e.n ? `Step ${e.n}: ${e.message}` : e.message, detail: { ...e.detail, check: e.check, seq: e.seq, ...(e.n ? { scenarioStep: e.n } : {}), ...(e.actor ? { actor: e.actor } : {}), ...(e.agent ? { agent: e.agent } : {}) } })),
     })), // no correlation: nothing is matched against logs here, so no id is declared and names stay readable
   });
   const stamped = rec.rows.filter((r) => r.at !== null).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.detail.seq - b.detail.seq);

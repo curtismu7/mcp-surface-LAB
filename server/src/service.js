@@ -31,12 +31,17 @@ export function runAction({ ws, workspaces, vertical, cast, op, params, tracepar
   try { outcome = perform(e, op, params); } finally { e.trace = null; }
   if (fresh !== null && JSON.stringify(e.snapshot()) !== fresh) workspaces.adopt(ws, vertical, e);
   // Run observability (rule 27): the events this action stored are kept as a run and written to stdout. A recorder that throws must never break the action or its audit.
-  let runId = null;
-  try { runId = e.lastRun ? commitRun(e, e.lastRun, log) : null; } catch (err) { console.error(`[mcp-surface-lab] the run was not recorded: ${String(err?.code || err?.name || 'Error').slice(0, 40)}: ${String(err?.message).replace(/[\r\n]+/g, ' ').slice(0, 200)}`); }
+  // The run is kept only when the workspace that holds it is (a run id the record route could not find is never returned), and a writer that fails leaves the run and its id.
+  let runId = null; let runLogFailed = false;
+  try {
+    const c = e.lastRun ? commitRun(e, e.lastRun, log, e.lastRunKept && workspaces.peek(ws, vertical) === e) : null;
+    runId = c?.id ?? null;
+    if (c?.writeError) throw c.writeError;
+  } catch (err) { runLogFailed = true; console.error(`[mcp-surface-lab] the run log was not written completely: ${String(err?.code || err?.name || 'Error').slice(0, 40)}: ${String(err?.message).replace(/[\r\n]+/g, ' ').slice(0, 200)}`); }
   e.lastRun = null;
   const first = { n: 1, label: 'browser to the lab API', request: { method: route.method, url: route.url, headers: { traceparent: formatTraceparent(t.traceId, root), 'x-workspace': ws }, body: scrub(params) }, response: { status: outcome.ok ? 200 : outcome.status, body: outcome.ok ? { ok: true } : { error: outcome.code } } };
   const hops = [first, ...e.hops.map((h, i) => ({ ...h, n: i + 2 }))];
   const truncated = e.hopsTruncated; e.hops = [];
   const gatewayTrace = e.gwTrace; e.gwTrace = null; // "What Privilege did": set by an mcp action only
-  return { outcome, hops, gatewayTrace, runId, hopsTruncated: truncated, traceparent: formatTraceparent(t.traceId, root), traceId: t.traceId, state: e.snapshot() };
+  return { outcome, hops, gatewayTrace, runId, runLogFailed, hopsTruncated: truncated, traceparent: formatTraceparent(t.traceId, root), traceId: t.traceId, state: e.snapshot() };
 }
