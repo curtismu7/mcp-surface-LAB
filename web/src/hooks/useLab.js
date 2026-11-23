@@ -37,7 +37,7 @@ export default function useLab({ mode, vertical, scenario }) {
       if (mine === actSeq.current && key === ctx.current) {
         seq.current += 1; // a load that started before this action must not overwrite its newer state
         if (r.body?.state) setData((d) => ({ ...(d || {}), mode, vertical, state: r.body.state }));
-        setLast({ ok: r.ok && r.body?.ok !== false, status: r.status, op, error: r.body?.error, detail: r.body?.detail, data: r.body?.data, result: r.body?.result, hops: r.body?.hops || [], trace: r.body?.trace || null, traceId: r.body?.traceId, truncated: r.body?.hopsTruncated, route: `POST /api/act/${op}`, at: Date.now() });
+        setLast({ ok: r.ok && r.body?.ok !== false, status: r.status, op, error: r.body?.error, detail: r.body?.detail, data: r.body?.data, result: r.body?.result, hops: r.body?.hops || [], trace: r.body?.trace || null, runId: r.body?.runId || null, traceId: r.body?.traceId, truncated: r.body?.hopsTruncated, route: `POST /api/act/${op}`, at: Date.now() });
       }
       return r;
     } finally { inflight.current -= 1; if (inflight.current === 0) setBusy(false); }

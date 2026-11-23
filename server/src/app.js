@@ -18,6 +18,8 @@ import { Engine } from './engine.js';
 import { isOp, isPure } from './actions.js';
 import { liveState, mockState, runAction } from './service.js';
 import { maskDeep, maskStory } from './mask.js';
+import { liveRecord, scenarioRecord } from './runObs.js';
+import { RunObsError } from './runObservability.js';
 import { shelfInfo } from './shelfLink.js';
 import { buildMethodTable, charsetProblem, isPageAddress, methodNotAllowed } from './shared/hygiene.js';
 
@@ -30,7 +32,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export { isPageAddress };
 
 // One route table: the 405 answers (with Allow) are built from it, and nothing else. ":op" matches one segment; HEAD is added wherever GET is.
-const ROUTES = { '/api/health': ['GET'], '/api/state': ['GET'], '/api/story': ['GET'], '/api/diagram': ['GET'], '/api/info': ['GET'], '/api/mode': ['GET', 'POST'], '/api/act/:op': ['POST'], '/api/reset': ['POST'] };
+const ROUTES = { '/api/health': ['GET'], '/api/state': ['GET'], '/api/story': ['GET'], '/api/diagram': ['GET'], '/api/info': ['GET'], '/api/run-record': ['GET'], '/api/mode': ['GET', 'POST'], '/api/act/:op': ['POST'], '/api/reset': ['POST'] };
 // The page itself ("/") is a route too, but only when a web build is served (see createApp): the wrong method on it is a 405 with Allow, not a 404.
 const METHODS = buildMethodTable(ROUTES);
 const PAGE_METHODS = buildMethodTable({ ...ROUTES, '/': ['GET'] });
@@ -38,7 +40,8 @@ const PAGE_METHODS = buildMethodTable({ ...ROUTES, '/': ['GET'] });
 const fail = (res, status, code, headers = {}) => res.set(headers).status(status).json({ error: code });
 const actName = (p) => { try { return decodeURIComponent(p.split('/')[2] ?? ''); } catch { return ''; } }; // /act/<name> -> name
 
-export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST, env = process.env, proxyHosts = new Set() } = {}) {
+// `log` receives the stdout line of each decision a Live run takes (index.js passes the console; tests pass a collector, the default drops them).
+export function createApp({ health = createHealth(), configFile = CONFIG, workspaces = createWorkspaces(), table = MOCK_TABLE, webDist = WEB_DIST, env = process.env, proxyHosts = new Set(), log = () => {} } = {}) {
   // The runtime server-side mode (rule 19): the source the toggle switches. It starts at the configured default.
   let currentSource = () => defaultMode();
   const app = express();
@@ -116,6 +119,34 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
     } catch (e) { return next(e); }
   });
 
+  // Run observability (rule 27): the record of ONE run, in the mode the page is in. Mock: the scripted scenario the page shows (its decisions were stored in the table when it
+  // was generated). Live: the run with `runId` that this workspace's engine holds; a run is only ever answered in the mode it was made in. Errors are { error, message }.
+  api.get('/run-record', workspace, async (req, res, next) => {
+    try {
+      noStore(res);
+      if (!queryVertical(req, res)) return;
+      const mode = modeOf(req.query.mode === 'real' ? 'live' : req.query.mode);
+      if (!mode) return res.status(400).json({ error: 'bad_mode', message: 'mode must be mock or live' });
+      const vertical = verticalOf(req);
+      if (mode === 'mock') {
+        const wanted = req.query.scenario;
+        const list = table.verticals[vertical].scenarios;
+        const sc = wanted === undefined ? list[0] : typeof wanted === 'string' ? list.find((x) => x.id === wanted) : null;
+        if (!sc) return res.status(400).json({ error: 'bad_scenario', message: 'the scenario is not one the lab has' });
+        const record = await scenarioRecord(vertical, sc);
+        return res.json(record ? { record } : { record: null, message: 'This scripted scenario takes no gateway, policy or approval decision, so it has no run record.' });
+      }
+      const wanted = req.query.runId;
+      if (wanted === undefined) return res.json({ record: null, message: 'No run yet: make a gateway call, a pass-through attempt, a proposal or a decision in Live.' });
+      if (typeof wanted !== 'string' || !/^[A-Za-z0-9-]{1,60}$/.test(wanted)) return res.status(400).json({ error: 'bad_run', message: 'the run id is not one the lab made' });
+      const record = await liveRecord(workspaces.peek(req.workspaceId, vertical), wanted);
+      return record ? res.json({ record }) : res.status(404).json({ error: 'unknown_run', message: 'This workspace does not hold that run (the engine keeps its last 20 Live runs, and a run is answered only in the mode it was made in).' });
+    } catch (e) {
+      if (e instanceof RunObsError) return res.status(e.status || 400).json({ error: e.code, message: e.message });
+      return next(e);
+    }
+  });
+
   // Every action: Live only (a pure one also in Mock), strict top-level keys, one trace, hops, and the whole fresh state back.
   api.post('/act/:op', workspace, (req, res, next) => {
     const id = req.workspaceId;
@@ -134,9 +165,9 @@ export function createApp({ health = createHealth(), configFile = CONFIG, worksp
       const route = { method: 'POST', url: '/api/act/(action)' };
       if (mode === 'mock' && !isPure(op)) return res.status(409).json({ error: 'mock_is_read_only', detail: 'Mock mode only reads tables: switch to Live to act' });
       const cast = castFor(req);
-      const r = runAction({ ws: id, workspaces, vertical, cast, op, params, traceparent: req.headers.traceparent, route, engine: mode === 'mock' ? new Engine(cast) : undefined });
+      const r = runAction({ ws: id, workspaces, vertical, cast, op, params, traceparent: req.headers.traceparent, route, engine: mode === 'mock' ? new Engine(cast) : undefined, log });
       res.set('traceparent', r.traceparent);
-      const common = { workspace: id, mode, vertical, hops: r.hops, ...(r.gatewayTrace ? { trace: r.gatewayTrace } : {}), hopsTruncated: r.hopsTruncated, traceId: r.traceId, ...(mode === 'live' ? { state: r.state } : {}) };
+      const common = { workspace: id, mode, vertical, hops: r.hops, ...(r.gatewayTrace ? { trace: r.gatewayTrace } : {}), hopsTruncated: r.hopsTruncated, traceId: r.traceId, ...(mode === 'live' ? { state: r.state, runId: r.runId } : {}) };
       if (r.outcome.ok) return res.json({ ok: true, op, result: r.outcome.result, ...common });
       return res.status(r.outcome.status || 400).json({ ok: false, op, error: r.outcome.code, detail: r.outcome.detail, ...(r.outcome.data ? { data: r.outcome.data } : {}), ...common });
     } catch (e) { return next(e); }

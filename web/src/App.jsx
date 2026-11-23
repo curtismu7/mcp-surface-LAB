@@ -12,6 +12,7 @@ import DiagramTab from "./components/DiagramTab";
 import TalkTrack from "./components/TalkTrack";
 import LastAction from "./components/LastAction";
 import GatewayTracePanel from "./components/GatewayTracePanel";
+import RunRecordPanel from "./components/RunRecordPanel";
 import { ClaimTag } from "./components/Bits";
 import useLab from "./hooks/useLab";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
@@ -190,6 +191,7 @@ export default function App() {
               {tab === "talk" && <TalkTrack talk={story.talkTrack} />}
               {mode === "live" && ACTION_TABS.includes(tab) && <LastAction last={lab.last} />}
               {mode === "live" && ACTION_TABS.includes(tab) && <GatewayTracePanel last={lab.last} />}
+              {ACTION_TABS.includes(tab) && stateReady && (mode === "live" || lab.scenario) && <RunRecordPanel mode={mode} vertical={vertical} last={lab.last} scenarioId={lab.scenario?.id ?? null} />}
             </>
           )}
         </div>

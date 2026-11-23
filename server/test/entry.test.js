@@ -19,7 +19,9 @@ test('no source file evals, uses vm or Function, builds a regular expression fro
     const code = fs.readFileSync(new URL(f, dir), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
     assert.ok(!/\beval\(|new Function\(|\bvm\./.test(code), `${f}: no eval, Function or vm`);
     assert.ok(!/writeFile|appendFile|createWriteStream|mkdirSync|rmSync|unlinkSync/.test(code), `${f}: the server writes no file`);
-    assert.ok(!/new RegExp\(/.test(code), `${f}: no regular expression is built at run time`);
+    // The vendored run-observability core (pinned, never edited here) builds its id-matching patterns from the correlation ids a lab declares, escaped. This lab declares none
+    // (run-observability.test.js pins that), so it is the one file allowed here, and only for this one rule.
+    assert.ok(f === 'runObservability.js' || !/new RegExp\(/.test(code), `${f}: no regular expression is built at run time`);
     assert.ok(!/process\.env\.MODE\b/.test(code), `${f}: a bare MODE is never read`);
     assert.ok(!/child_process|node:http'|node:https|node:net'/.test(code.replace("from 'node:net'", '')) || f === 'netguard.js', `${f}: no network or process modules`);
   }

@@ -17,13 +17,20 @@ const OPS = {
 export const OP_NAMES = Object.keys(OPS);
 export const isOp = (name) => typeof name === 'string' && Object.hasOwn(OPS, name);
 export const isPure = (name) => isOp(name) && typeof OPS[name] === 'object' && OPS[name].pure === true;
+// The actions that make a decision a layer can log, so each one is a run (rule 27): a gateway call, a pass-through attempt, a proposal and its decision. The rest
+// (policy edits, deployments, OAuth and the like) change configuration and leave only the audit log.
+export const RUN_OPS = ['mcp', 'passThrough', 'propose', 'decide'];
+export const isRunOp = (name) => RUN_OPS.includes(name);
 
 export function perform(engine, op, params) {
   if (!isOp(op)) throw new Error('unknown op');
   const fn = typeof OPS[op] === 'function' ? OPS[op] : OPS[op].run;
+  engine.lastRun = null;
+  if (isRunOp(op)) engine.beginRun(); // the events of this action, left in engine.lastRun for the caller to keep
   try {
     if (!isPure(op)) engine.assertRoom(); // a full audit log refuses the WHOLE request, before anything changes
     return { ok: true, result: fn(engine, params) };
   }
   catch (e) { if (e instanceof InputError) return { ok: false, status: e.status, code: e.code, detail: e.message, data: e.data }; throw e; }
+  finally { if (isRunOp(op)) engine.endRun(); }
 }

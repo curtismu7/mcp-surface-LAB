@@ -293,3 +293,66 @@ describe("What Privilege did (Rule 25)", () => {
     expect(screen.queryByTestId("gateway-trace")).toBeNull();
   });
 });
+
+describe("What each layer logged for this run (Rule 27)", () => {
+  it("Mock: the record of the scripted scenario on screen, all rows simulated, source mock, and a scenario that decides nothing says so (never the previous record)", async () => {
+    await mount();
+    const panel = await screen.findByTestId("run-observability", {}, T);
+    expect(panel).toHaveTextContent("What each layer logged for this run");
+    expect(screen.getByTestId("ro-basis")).toHaveTextContent(/Simulated: the lab's mock computed these rows/);
+    expect(screen.getByTestId("ro-coverage-privilege")).toHaveTextContent("Simulated");
+    expect(screen.getByTestId("ro-coverage-authorize")).toHaveTextContent("Not logged");
+    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/this lab's own simulated engine, not Ping's/);
+    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/Mock shows the decisions the engine took when its tables were generated/);
+    expect(screen.getByTestId("ro-streams")).toHaveTextContent(/nowhere today/);
+    expect(panel.querySelectorAll('tr[data-origin="simulated"]').length).toBeGreaterThan(10);
+    expect(panel.querySelectorAll('tr[data-origin="logged"], tr[data-origin="response"]').length).toBe(0);
+    await tab("Authorization (OAuth/CIMD)"); await click("scn-authorization");
+    await waitFor(() => expect(screen.getByTestId("ro-none")).toHaveTextContent(/no run record/), T);
+    expect(screen.queryByTestId("run-observability")?.querySelectorAll("tr[data-origin]").length ?? 0).toBe(0); // the aggregate scenario's rows are gone
+  });
+
+  it("Live: empty before a call; a refused call shows its refusal under Privilege; a configuration change says it makes no run; Mock shows the scenario, not the Live run", async () => {
+    await mount(); await live();
+    expect(await screen.findByTestId("ro-empty", {}, T)).toHaveTextContent(/Run the demo/);
+    await click("preset-agg-denies"); await click("call-tool");
+    const panel = await screen.findByTestId("run-observability", {}, T);
+    await waitFor(() => expect(panel.querySelectorAll('tr[data-origin="simulated"]').length).toBeGreaterThan(3), T);
+    expect(screen.getByTestId("ro-summary")).toHaveTextContent(/1 refused/);
+    const refused = panel.querySelector('tr[data-outcome="refused"]');
+    expect(refused).toHaveAttribute("data-layer", "privilege");
+    expect(refused).toHaveTextContent(/tool in the aggregate policy/);
+    expect(screen.getByTestId("ro-coverage-resource")).toHaveTextContent("Not logged"); // the member was never asked
+    expect(screen.getByTestId("ro-lab-note")).toHaveTextContent(/Live is the same engine acting on your calls, so these rows are simulated too/);
+    // the panel sits after the gateway trace
+    expect(screen.getByTestId("gateway-trace-panel").compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // a later configuration change makes no run: it says so and the call's record is gone
+    await click("fault-agg");
+    expect(await screen.findByTestId("ro-no-run", {}, T)).toHaveTextContent(/makes no run/);
+    expect(screen.queryByTestId("run-observability")).toBeNull();
+    // back to Mock: the scenario's record, never the Live run's
+    await fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "mock" } });
+    await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/MOCK mode/), T);
+    await waitFor(() => expect(screen.getByTestId("run-observability").textContent).toMatch(/Simulated/), T);
+    expect(screen.queryByTestId("ro-no-run")).toBeNull();
+  });
+
+  it("while a run's record is read the page says so and never shows the previous record; a record that cannot be read is an alert", async () => {
+    await mount(); await live();
+    await click("preset-agg-denies"); await click("call-tool");
+    await screen.findByTestId("run-observability", {}, T);
+    const real = globalThis.fetch; let release;
+    globalThis.fetch = (u, init) => (String(u).includes("/api/run-record") ? new Promise((res) => { release = () => res(real(u, init)); }) : real(u, init));
+    try {
+      await click("preset-ok"); await click("call-tool");
+      expect(await screen.findByTestId("ro-loading", {}, T)).toHaveTextContent("Collecting this run's logs…");
+      expect(screen.queryByTestId("run-observability")).toBeNull();
+      await waitFor(() => expect(release).toBeTypeOf("function"), T);
+      release();
+      await waitFor(() => expect(screen.getByTestId("ro-summary")).toHaveTextContent(/0 refused/), T);
+      globalThis.fetch = (u, init) => (String(u).includes("/api/run-record") ? Promise.resolve(new Response(JSON.stringify({ error: "unknown_run", message: "This workspace does not hold that run." }), { status: 404, headers: { "content-type": "application/json" } })) : real(u, init));
+      await click("preset-agg-denies"); await click("call-tool");
+      expect(await screen.findByTestId("ro-error", {}, T)).toHaveTextContent(/does not hold that run/);
+    } finally { globalThis.fetch = real; }
+  });
+});

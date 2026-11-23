@@ -27,6 +27,17 @@ export const LIMITS = { audit: 500, recordings: 200, apps: 30, members: 12, hops
 export const METHODS = ['initialize', 'ping', 'tools/list', 'tools/call', 'prompts/list', 'prompts/get', 'resources/list', 'resources/read'];
 const LIST_METHODS = ['tools/list', 'prompts/list', 'resources/list'];
 const DENY_MSG = 'access denied';
+// Run observability (rule 27): what each check means in a run record. The key is the last part of the check's id; the value is [layer, kind]. Only a policy point's
+// decision is allowed or refused (kind 'policy'). A request the gateway turns away because it is not a well-formed call (kind 'request') is refused when it fails and
+// information when it passes. A fault (the application is down, a member is missing or hangs) and a plain step (the in-flight filter ran) are information.
+const CHECKS = {
+  key: ['agent', 'policy'], scope: ['agent', 'policy'], credential: ['agent', 'request'],
+  method: ['gateway', 'policy'], policy: ['privilege', 'policy'], entitlement: ['privilege', 'policy'], cap: ['privilege', 'policy'], toolfilter: ['privilege', 'policy'],
+  target: ['gateway', 'request'], kind: ['gateway', 'request'], namespace: ['gateway', 'request'], member: ['gateway', 'request'],
+  resolve: ['gateway', 'fault'], reach: ['gateway', 'fault'], connect: ['gateway', 'fault'], filter: ['gateway', 'none'], listing: ['gateway', 'none'],
+};
+// The id that goes on the stdout line: the word "scope" is one the family's log matchers read, so the key's grant check is written as a grant.
+const checkStep = (id) => (id === 'agent.scope' ? 'agent.grant' : id);
 // A JSON-RPC method the visitor typed is only ever stored or shown if it is one the gateway knows; anything else is '(unrecognised)'.
 const safeMethod = (m) => (METHODS.includes(m) ? m : '(unrecognised)');
 
@@ -64,6 +75,7 @@ export class Engine {
     this.audit = []; this.auditDropped = 0; this.recordings = []; this.sessionLogging = false;
     this.hops = []; this.hopsTruncated = false; this.trace = null;
     this.gw = null; this.gwTrace = null; // "What Privilege did": the decisions of the call being made, and the finished record (only for a web action, like the hops)
+    this.run = null; this.lastRun = null; this.runs = []; // run observability: the events of the action being made, of the last one made, and the runs kept (service.js, runObs.js)
     this.agents = AGENTS(cast).map((a) => ({ ...a }));
     this.tenants = [cast.castHost, cast.castTenant2];
     this.auth = new AuthServer({ host: cast.castHost, docs: cimdDocs(cast), allowlist: CIMD_ALLOWLIST_DEFAULT(cast) });
@@ -81,8 +93,28 @@ export class Engine {
   // "What Privilege did": one decision the simulated gateway really evaluated, in the order it evaluated it. Only called where the code takes the branch, so a check that
   // was never reached is never listed. `evidence` is fixed lab text (never the caller's input). Kept only while a web action is being traced, like hop().
   check(id, label, ok, evidence, outcome) {
+    const o = outcome || (ok ? 'pass' : 'fail');
+    this.observeCheck(id, label, o, evidence);
     if (!this.gw || this.gw.decisions.length >= 40) return;
-    this.gw.decisions.push({ id, label, outcome: outcome || (ok ? 'pass' : 'fail'), evidence });
+    this.gw.decisions.push({ id, label, outcome: o, evidence });
+  }
+  // ---- run observability (rule 27) ----------------------------------------------------------------------------------------------------------
+  // A run is what one visitor action (or one scripted step) decided, in the order the engine decided it, each decision stamped ONCE with the lab clock. An event exists
+  // only where the code takes the branch, so nothing is invented and a check that was never reached has no event. The service layer gives the run an id, keeps it and
+  // writes its stdout lines (runObs.js); the engine itself does no I/O. Only the actions in actions.js RUN_OPS begin a run.
+  beginRun() { this.run = { events: [], actor: null, agent: null, failed: false, seen: new Set() }; this.lastRun = null; }
+  endRun() { this.lastRun = this.run ? this.run.events : null; this.run = null; }
+  observe(layer, check, outcome, message, detail = {}) {
+    if (!this.run) return;
+    if (outcome === 'refused') this.run.failed = true;
+    this.run.events.push({ at: iso(this.t), layer, check, outcome, message, detail, actor: this.run.actor, agent: this.run.agent });
+  }
+  observeCheck(id, label, o, evidence) {
+    if (!this.run) return;
+    const [layer, kind] = CHECKS[id.slice(id.lastIndexOf('.') + 1)] || ['gateway', 'none'];
+    if (o === 'fail') this.run.failed = true;
+    const outcome = o === 'info' ? 'info' : kind === 'policy' ? (o === 'pass' ? 'allowed' : 'refused') : kind === 'request' && o === 'fail' ? 'refused' : 'info';
+    this.observe(layer, checkStep(id), outcome, `${label}: ${evidence}`, layer === 'agent' && this.run.agent ? { agent: this.run.agent } : {});
   }
   // Called BEFORE an action changes anything (perform() does it for every non-pure action), with headroom for the few entries one action can write, so a full
   // log refuses the whole request instead of mutating state and then answering 507.
@@ -94,9 +126,17 @@ export class Engine {
   user(id) {
     const u = typeof id === 'string' ? this.users.find((x) => x.id === id) : null;
     if (!u) throw refuse('unknown_user', 'unknown user');
+    if (this.run && !this.run.seen.has(u.id)) {
+      this.run.seen.add(u.id); this.run.actor ??= u.id;
+      this.observe('person', 'caller', 'info', `${u.id} (${u.groups.join(', ')}) is the user this action is for. The lab has no sign-in: the name is a pick from its roster.`, { user: u.id, role: u.role, groups: [...u.groups] });
+    }
     return u;
   }
-  admin(id) { const u = this.user(id); if (u.role !== 'admin') { this.deny('admin_only', { actor: u.id }); throw refuse('admin_only', 'only a tenant administrator may do this', 403); } return u; }
+  admin(id) {
+    const u = this.user(id);
+    if (u.role !== 'admin') { this.observe('privilege', 'admin-only', 'refused', `${u.id} is not a tenant administrator, and only an administrator may do this.`); this.deny('admin_only', { actor: u.id }); throw refuse('admin_only', 'only a tenant administrator may do this', 403); }
+    return u;
+  }
   // A refusal worth keeping: written to the audit log with the acting user.
   deny(code, fields = {}) { if (this.audit.length < LIMITS.audit) this.audit.push({ n: ++this.n.audit, at: iso(this.t), kind: 'refused', code, ...fields }); else this.auditDropped++; }
   putApp(app, up = {}) {
@@ -314,7 +354,12 @@ export class Engine {
       this.check(`${where === 'gateway' ? 'gateway' : 'member'}.credential`, 'Backend credential', true, `credential mode ${inj.received.mode}: the backend sees ${inj.identity.kind === 'anonymous' ? 'no credential' : `${inj.identity.kind} ${inj.identity.actor}`}`);
       identity = inj.identity; credential = inj.received; this.cur.received = inj.received; this.cur.identity = inj.identity;
     }
-    const answer = this.upstreamAnswer(app, rpc, identity, user.id);
+    let answer;
+    try { answer = this.upstreamAnswer(app, rpc, identity, user.id); } catch (e) {
+      if (e instanceof InputError) this.observe('resource', 'upstream', e.code === 'invalid_arguments' ? 'refused' : 'info', e.code === 'invalid_arguments' ? `The mock MCP server for ${app.name} checked the arguments against the tool's input schema and answered with an error.` : `The mock MCP server for ${app.name} could not answer (${e.code}).`, { app: app.id, code: e.code });
+      throw e;
+    }
+    this.observe('resource', 'upstream', 'info', `The mock MCP server for ${app.name} answered ${safeMethod(rpc.method)}${rpc.method === 'tools/call' ? ` for ${rpc.params.name}` : ''} with everything it has: it knows nothing of entitlements, and the gateway's filter comes next.`, { app: app.id, method: safeMethod(rpc.method) });
     const style = ctx.style && STYLES.includes(ctx.style) ? ctx.style : (member ? 'sse' : 'json');
     const wire = encodeAnswer(answer, style);
     const g = this.grantsOf(app.policy, user);
@@ -356,6 +401,8 @@ export class Engine {
       if (this.gw && seen.rpc) this.gwTrace = this.buildGwTrace(seen, res, null, startN);
       return res;
     } catch (e) {
+      // A refusal that no check recorded (the call was too large to record, say) is still the gateway's answer: one event, so a refused run never reads as an unexplained one.
+      if (e instanceof InputError && seen.rpc && this.run && !this.run.failed) this.observe('gateway', 'verdict', 'refused', `The gateway refused the call: ${e.message}`, { code: e.code });
       if (this.gw && e instanceof InputError) {
         if (!seen.rpc) { try { seen.rpc = this.parseRpc(p.rpc); } catch { /* the request itself was refused before it was a gateway call */ } }
         if (!seen.target && seen.rpc && isObj(p.target) && (p.target.kind === 'app' || p.target.kind === 'aggregate')) seen.target = p.target;
@@ -420,6 +467,7 @@ export class Engine {
       const ag = typeof p.as === 'string' ? this.agents.find((a) => a.id === p.as) : null;
       if (!ag) throw refuse('unknown_agent', 'unknown agent', 404);
       if (this.gw) this.gw.who = `agent key of ${ag.id}`;
+      if (this.run) { this.run.agent = ag.id; this.run.actor = ag.owner; }
       this.check('agent.key', 'Agent key', ag.enabled, ag.enabled ? 'the key is enabled' : 'the key has been revoked');
       if (!ag.enabled) { this.deny('agent_revoked', { agent: ag.id }); throw refuse('agent_revoked', 'this agent has been revoked', 401); }
       this.check('agent.scope', 'Key scope', ag.scopes.includes('mcp'), ag.scopes.includes('mcp') ? 'the key is scoped for mcp access' : 'the key is not scoped for mcp access');
