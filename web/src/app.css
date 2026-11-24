@@ -7,7 +7,7 @@
 .shell-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 0 -16px; padding: 10px 20px;
   background: var(--box-dark); color: var(--on-box); border-bottom: 3px solid transparent; border-image: var(--accent-gradient) 1; }
 .shell-bar h1 { margin: 0; color: var(--on-box); font-size: 1.2rem; }
-.shell-brand { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.shell-brand  { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .shell-logo { display: inline-grid; place-items: center; min-width: 1.9rem; height: 1.9rem; padding: 0 4px; border-radius: 4px; background: var(--accent-gradient); color: var(--on-accent); font-weight: 800; font-size: 0.7rem; font-family: var(--font-mono); }
 .shell-badge { padding: 2px 8px; border-radius: 999px; border: 1px solid transparent; background: var(--accent-gradient); color: var(--on-accent); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .shell-badge--real { background: var(--surface-2); color: var(--status-warn); border-color: var(--status-warn); }
