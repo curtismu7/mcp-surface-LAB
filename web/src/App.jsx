@@ -18,6 +18,7 @@ import useLab from "./hooks/useLab";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
 import TalkTrackDialog from "./talk-track/TalkTrackDialog.jsx";
 import { getJson, resetWorkspace, setMode } from "./api";
+import ModeModal from "./mode-modal/ModeModal.jsx";
 
 import fs from "node:fs";
 const LAB_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version || null; } catch { return null; } })();
@@ -33,9 +34,12 @@ export const TABS = [
   { id: "diagram", label: "Diagram" },
   { id: "talk", label: "Talk track" },
 ];
-// The banner is never blank and never claims one mode before it knows: until the story answers it says both, honestly.
-const TAIL = "Every product claim is a Ping release claim, UNVERIFIED on our tenant (release 2026-11-02). Nothing here calls a real gateway, MCP server, identity provider or tenant.";
-export const BANNER_UNKNOWN = `SIMULATED, MOCK or LIVE mode (loopback only, no outbound network). ${TAIL}`;
+// The Real-or-mock modal's line per mode (the old banner's facts). Live is the lab's own local engine, so its REAL line says it is still simulated;
+// the claim label is also on every tab as a claim tag. Until the mode is known the modal says MOCK.
+export const MODE_LINES = {
+  mock: "SIMULATED: tables from the lab's own gateway engine, read-only. Every product claim is a Ping release claim, UNVERIFIED on our tenant (release 2026-11-02); no tenant, gateway or network is touched.",
+  real: "LIVE, but still SIMULATED: the lab's own local gateway engine acts on your calls, loopback only, zero outbound. Every product claim is a Ping release claim, UNVERIFIED on our tenant.",
+};
 const MODE_KEY = "msf.mode";
 const THEME_KEY = "msf.theme";
 function initialTheme() {
@@ -120,7 +124,6 @@ export default function App() {
   // The calling user and the configuring administrator: the visitor's pick if it is still on the roster, else the first of each.
   const actor = users.some((p) => p.id === actorChoice) ? actorChoice : (people[0]?.id || "");
   const admin = users.some((p) => p.id === adminChoice) ? adminChoice : (admins[0]?.id || "");
-  const banner = story && mode ? story.banner[mode] : BANNER_UNKNOWN;
   // The story (names) and the state (applications) must be for the SAME vertical before a tab is drawn: during a switch they briefly differ.
   const ready = story && mode && story.vertical === vertical;
   const stateReady = !!lab.state && lab.data?.vertical === vertical;
@@ -156,7 +159,6 @@ export default function App() {
         </TopMenu>
       </header>
       <main className="page">
-        <p className="banner" role="status" data-state={mode === "live" ? "live" : "mock"} data-testid="banner">{banner}</p>
         {(error || lab.error) && <p className="app-error" role="alert">Could not load the lab ({error || lab.error}). Is the server running?</p>}
         <p className="sr-only" role="status" aria-live="polite">{resetMsg}</p>
         {!presenter && (story || (mode === "live" && users.length > 0)) && (
@@ -199,6 +201,7 @@ export default function App() {
       </main>
 
       <TalkTrackDialog isOpen={talkOpen} onClose={() => setTalkOpen(false)} talk={story?.talkTrack ?? []} />
+      <ModeModal mode={mode === "live" ? "real" : "mock"} lines={MODE_LINES} storageKey="msf-mode" />
     </div>
   );
 }

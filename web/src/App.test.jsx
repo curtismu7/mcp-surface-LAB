@@ -6,7 +6,7 @@ import { createApp, startHttpServer } from "../../server/src/app.js";
 import { createHealth } from "../../server/src/health.js";
 import { createWorkspaces } from "../../server/src/workspaces.js";
 import { VERTICALS } from "../../server/src/cast.js";
-import App, { BANNER_UNKNOWN, TABS } from "./App";
+import App, { MODE_LINES, TABS } from "./App";
 import { labelOffsets } from "./components/PatternDiagram";
 import { visible } from "./safeText";
 import { forgetWorkspace } from "./workspace";
@@ -33,31 +33,55 @@ const T = { timeout: 120000 };
 const mount = async () => { render(<App />); await screen.findByTestId("members", {}, T); };
 const tab = (name) => userEvent.click(within(screen.getByRole("navigation", { name: "Lab sections" })).getByRole("link", { name }));
 const click = async (id) => { await waitFor(() => expect(screen.getByTestId(id)).toBeEnabled(), T); await userEvent.click(screen.getByTestId(id)); };
-const live = async () => { await fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "real" } }); await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/LIVE mode/), T); await screen.findByTestId("actor", {}, T); await waitFor(() => expect(screen.getByTestId("list-tools")).toBeEnabled(), T); };
+const live = async () => { await fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "real" } }); await waitFor(() => expect(screen.getByTestId("mode")).toHaveTextContent("Mode: live"), T); await screen.findByTestId("actor", {}, T); await waitFor(() => expect(screen.getByTestId("list-tools")).toBeEnabled(), T); };
 const setValue = (id, value) => fireEvent.change(screen.getByTestId(id), { target: { value } });
 const pick = (id, value) => userEvent.selectOptions(screen.getByTestId(id), value);
 
 describe("shell", () => {
-  it("has the nine tabs and the banner says Ping claim UNVERIFIED in the right mode on every tab, presenter mode included", async () => {
+  it("has the nine tabs, and every tab, presenter mode included, carries the Ping claim UNVERIFIED tag; the old banner is gone", async () => {
     expect(TABS.map((t) => t.id)).toEqual(["aggregate", "discovery", "openapi", "credentials", "catalog", "authorization", "creation", "diagram", "talk"]);
-    expect(BANNER_UNKNOWN).toMatch(/UNVERIFIED on our tenant/);
     await mount();
-    // shell bar first, then main with the banner as its first child (STANDALONE-UI-PATTERNS sections 1 and 2)
+    // shell bar first, then main; the simulation banner no longer opens it
     expect(document.querySelector(".app").firstElementChild.matches("header.shell-bar")).toBe(true);
-    expect(document.querySelector("main").firstElementChild).toBe(screen.getByTestId("banner"));
+    expect(screen.queryByTestId("banner")).toBeNull();
+    expect(document.querySelector("main > .banner")).toBeNull();
     for (const t of TABS) {
       await tab(t.label);
-      await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/MOCK mode.*UNVERIFIED on our tenant/), T);
       expect(within(screen.getByRole("navigation", { name: "Lab sections" })).getByRole("link", { name: t.label })).toHaveAttribute("aria-current", "page");
-      expect(document.querySelector("main").firstElementChild).toBe(screen.getByTestId("banner"));
+      await waitFor(() => expect(screen.getAllByTestId("claim-tag").length).toBeGreaterThan(0), T);
+      for (const tag of screen.getAllByTestId("claim-tag")) expect(tag).toHaveTextContent("Ping release claim, UNVERIFIED on our tenant");
     }
-    await tab("Aggregate"); await userEvent.keyboard("p");
-    expect(screen.getByTestId("banner")).toHaveTextContent(/UNVERIFIED on our tenant/);
-    expect(screen.getByTestId("presenter-say")).toBeInTheDocument();
+    await userEvent.keyboard("p"); // presenter mode, on the Talk track tab
+    for (const t of TABS) {
+      await tab(t.label);
+      await waitFor(() => expect(screen.getAllByTestId("claim-tag").length).toBeGreaterThan(0), T);
+      if (t.id !== "talk") expect(within(screen.getByTestId("presenter-say")).getByTestId("claim-tag")).toBeInTheDocument();
+    }
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByTestId("presenter-say")).toBeNull();
+  });
+
+  it("opens on a modal that says MOCK, SIMULATED and UNVERIFIED, closes on Got it, and stays closed after a reload; Live shows REAL with a line saying it is still simulated", async () => {
+    const { unmount } = render(<App />);
+    const modal = await screen.findByTestId("mode-modal", {}, T);
+    expect(modal).toHaveAttribute("data-mode", "mock");
+    expect(modal).toHaveTextContent("MOCK");
+    expect(modal).toHaveTextContent(MODE_LINES.mock);
+    expect(modal).toHaveTextContent(/SIMULATED/);
+    expect(modal).toHaveTextContent(/UNVERIFIED on our tenant/);
+    await userEvent.click(screen.getByTestId("mode-modal-ok"));
+    expect(screen.queryByTestId("mode-modal")).toBeNull();
+    unmount();
+    render(<App />); await screen.findByTestId("members", {}, T);
+    expect(screen.queryByTestId("mode-modal")).toBeNull();
     await live();
-    expect(screen.getByTestId("banner")).toHaveTextContent(/LIVE mode/); expect(screen.getByTestId("mode")).toHaveTextContent("Mode: live");
+    const real = await screen.findByTestId("mode-modal", {}, T);
+    expect(real).toHaveAttribute("data-mode", "real");
+    expect(real).toHaveTextContent("REAL");
+    expect(real).toHaveTextContent(MODE_LINES.real);
+    expect(real).toHaveTextContent(/still SIMULATED/);
+    expect(real).toHaveTextContent(/UNVERIFIED on our tenant/);
+    expect(screen.getByTestId("mode")).toHaveTextContent("Mode: live");
   });
 
   it("makes no non-local request", async () => {
@@ -342,7 +366,7 @@ describe("What each layer logged for this run (Rule 27)", () => {
     expect(screen.getByTestId("ro-no-run")).not.toHaveTextContent(/changes configuration/);
     // back to Mock: the scenario's record, never the Live run's
     await fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "mock" } });
-    await waitFor(() => expect(screen.getByTestId("banner")).toHaveTextContent(/MOCK mode/), T);
+    await waitFor(() => expect(screen.getByTestId("mode")).toHaveTextContent("Mode: mock"), T);
     await waitFor(() => expect(screen.getByTestId("run-observability").textContent).toMatch(/Simulated/), T);
     expect(screen.queryByTestId("ro-no-run")).toBeNull();
   });

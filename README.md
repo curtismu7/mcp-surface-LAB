@@ -6,7 +6,7 @@ Tier: Demo
 Repo: https://github.com/curtismu7/mcp-surface-LAB
 Catalog: D106
 
-**Every product claim is a Ping release claim, UNVERIFIED on our tenant.** The release is not on our tenant. Nothing here calls a real gateway, MCP server, identity provider or network. A banner on every tab, presenter mode included, says so.
+**Every product claim is a Ping release claim, UNVERIFIED on our tenant.** The release is not on our tenant. Nothing here calls a real gateway, MCP server, identity provider or network. The Real-or-mock modal says so when the page opens, and a claim tag sits on every tab, presenter mode included.
 
 ## What is simulated
 
@@ -77,7 +77,7 @@ Other variables: `VITE_PORT` (Vite dev server, default 7351, `npm run dev -w web
 
 ## Mock and live modes
 
-The header has a **Mock / Live** toggle on every page; the banner and the mode chip show the same mode. Mock reads the generated tables (a scenario picker on each tab) and is read-only: write controls are off and the API answers 409. Live drives this workspace's engine. "Call as" is the calling user; "Configure as" is the administrator for edits.
+The header has a **Mock / Live** toggle on every page; the Real-or-mock modal and the mode chip show the same mode (Live reads as REAL in the modal, with a line saying it is still simulated). Mock reads the generated tables (a scenario picker on each tab) and is read-only: write controls are off and the API answers 409. Live drives this workspace's engine. "Call as" is the calling user; "Configure as" is the administrator for edits.
 
 **What Privilege did.** In Live mode, each Call or List under a tab ends with a "What Privilege did" panel under the last action: the request the agent sent to the lab's simulated gateway (a reserved `.invalid` host), the exact answer, and each decision the engine evaluated in between, all marked "checked" because this lab's own engine computed them (it never reads a real gateway). The shared panel is vendored and pinned (Rule 25).
 
